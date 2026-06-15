@@ -50,6 +50,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_role'], $_POST
     }
 }
 
+// ── Handle Add Healthcare Provider ──
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_provider'])) {
+    $first_name   = trim($_POST['first_name'] ?? '');
+    $last_name    = trim($_POST['last_name'] ?? '');
+    $email        = trim($_POST['provider_email'] ?? '');
+    $contact      = trim($_POST['contact_number'] ?? '');
+    $barangay     = trim($_POST['barangay'] ?? '');
+    $specialization = trim($_POST['specialization'] ?? '');
+    $license      = trim($_POST['license_number'] ?? '');
+    $full_name    = $first_name . ' ' . $last_name;
+    $temp_password = bin2hex(random_bytes(8));
+    $hashed       = password_hash($temp_password, PASSWORD_DEFAULT);
+    $role         = 'healthcare_provider';
+
+    $stmt = $db->prepare("INSERT INTO users (full_name, email, password, role, created_at) VALUES (?, ?, ?, ?, NOW())");
+    $stmt->bind_param("ssss", $full_name, $email, $hashed, $role);
+    if ($stmt->execute()) {
+        header("Location: user_management.php?notice=Healthcare provider added successfully");
+    } else {
+        header("Location: user_management.php?notice=Error adding provider");
+    }
+    exit;
+}
+
 // ── Get all users (except current admin) ──
 $users_query = $db->query("
     SELECT id, full_name, email, role, created_at 
@@ -59,12 +83,12 @@ $users_query = $db->query("
 ");
 
 // ── Statistics ──
-$total_users = $db->query("SELECT COUNT(*) AS total FROM users")->fetch_assoc()['total'];
-$total_admins = $db->query("SELECT COUNT(*) AS total FROM users WHERE role = 'lgu_admin'")->fetch_assoc()['total'];
+$total_users     = $db->query("SELECT COUNT(*) AS total FROM users")->fetch_assoc()['total'];
+$total_admins    = $db->query("SELECT COUNT(*) AS total FROM users WHERE role = 'lgu_admin'")->fetch_assoc()['total'];
 $total_providers = $db->query("SELECT COUNT(*) AS total FROM users WHERE role = 'healthcare_provider'")->fetch_assoc()['total'];
 
 // ── Greeting ──
-$hour = (int) date('G');
+$hour     = (int) date('G');
 $greeting = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
 $current_datetime = date('l, F j, Y • g:i A');
 
@@ -106,6 +130,8 @@ $svg = [
     'close'           => '<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>',
     'trend'           => '<path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/>',
     'empty'           => '<path d="M20 6h-2.18c.07-.44.18-.88.18-1.34C18 2.54 15.46 0 12.34 0c-1.7 0-3.23.64-4.37 1.68L7 3H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-7.66-4c1.14 0 2.16.61 2.66 1.5H9.37l1.25-1.23A3.2 3.2 0 0112.34 2zM20 20H4V5h2.38L4.81 6.63A4.64 4.64 0 004 9.34C4 11.9 6.1 14 8.66 14c1.37 0 2.6-.6 3.45-1.55L13.2 11l1.5 1.5A4.97 4.97 0 0018 14c2.76 0 5-2.24 5-5 0-1.67-.82-3.15-2.07-4.06L20 6v14z"/>',
+    'export'          => '<path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>',
+    'plus'            => '<path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>',
 ];
 
 function icon(string $key, array $svg_map, string $extra_class = ''): string {
@@ -127,216 +153,14 @@ function formatRole(string $role): string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AbleCare – User Management</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  :root {
-    --teal-dark:   #1f6b5e;
-    --teal:        #2e8b7a;
-    --teal-mid:    #3aa690;
-    --teal-light:  #d0ede8;
-    --teal-xlight: #eaf6f4;
-    --teal-accent: #4dbfaa;
-    --green:       #28a745;
-    --red:         #e74c3c;
-    --orange:      #e67e22;
-    --text-dark:   #1a2e2b;
-    --text-mid:    #4a6660;
-    --text-muted:  #8aada8;
-    --bg:          #f4f8f7;
-    --white:       #ffffff;
-    --border:      #dcecea;
-    --shadow-sm:   0 1px 4px rgba(46,139,122,.08);
-    --shadow-md:   0 4px 16px rgba(46,139,122,.12);
-    --radius:      14px;
-    --radius-sm:   8px;
-    --sidebar-w:   222px;
-    --font:        'DM Sans', sans-serif;
-  }
-
-  body { font-family: var(--font); background: var(--bg); color: var(--text-dark); min-height: 100vh; display: flex; }
-
-  /* ── SIDEBAR ─────────────────────────── */
-  .sidebar {
-    width: var(--sidebar-w); min-height: 100vh;
-    background: var(--white); border-right: 1px solid var(--border);
-    display: flex; flex-direction: column;
-    position: fixed; top: 0; left: 0; bottom: 0; z-index: 100;
-    box-shadow: var(--shadow-sm);
-  }
-  .sidebar-brand {
-    display: flex; align-items: center; gap: 10px;
-    padding: 22px 20px 18px; border-bottom: 1px solid var(--border);
-  }
-  .brand-icon {
-    width: 38px; height: 38px; background: var(--teal); border-radius: 10px;
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  }
-  .brand-icon svg { width: 20px; height: 20px; fill: #fff; }
-  .brand-name { font-weight: 700; font-size: 15px; color: var(--teal-dark); line-height: 1.2; }
-  .brand-sub  { font-size: 10px; color: var(--text-muted); font-weight: 500; letter-spacing: .04em; }
-  .sidebar-nav { flex: 1; padding: 18px 12px; display: flex; flex-direction: column; gap: 3px; }
-  .nav-item {
-    display: flex; align-items: center; gap: 11px;
-    padding: 10px 12px; border-radius: var(--radius-sm);
-    font-size: 13.5px; font-weight: 500; color: var(--text-mid);
-    cursor: pointer; transition: background .15s, color .15s;
-    text-decoration: none; border: none; background: none; width: 100%;
-  }
-  .nav-item:hover { background: var(--teal-xlight); color: var(--teal-dark); }
-  .nav-item.active { background: var(--teal); color: #fff; }
-  .nav-item.active .nav-icon svg { fill: #fff; }
-  .nav-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .nav-icon svg { width: 16px; height: 16px; fill: var(--text-muted); transition: fill .15s; }
-  .nav-item:hover .nav-icon svg { fill: var(--teal-dark); }
-  .sidebar-footer { padding: 14px 12px 20px; border-top: 1px solid var(--border); }
-  .logout-btn {
-    display: flex; align-items: center; gap: 10px;
-    padding: 9px 12px; border-radius: var(--radius-sm);
-    font-size: 13px; font-weight: 500; color: var(--text-muted);
-    cursor: pointer; background: none; border: none; width: 100%;
-    transition: color .15s, background .15s;
-  }
-  .logout-btn:hover { color: var(--red); background: #fdf0ef; }
-  .logout-btn svg { width: 16px; height: 16px; fill: currentColor; }
-
-  /* ── MAIN ────────────────────────────── */
-  .main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
-
-  /* ── TOPBAR ──────────────────────────── */
-  .topbar {
-    background: var(--white); border-bottom: 1px solid var(--border);
-    padding: 14px 32px; display: flex; align-items: center; justify-content: space-between;
-    position: sticky; top: 0; z-index: 50; box-shadow: var(--shadow-sm);
-  }
-  .topbar-title h1 { font-size: 20px; font-weight: 700; color: var(--text-dark); }
-  .topbar-title p  { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
-  .topbar-right    { display: flex; align-items: center; gap: 14px; }
-  .notif-btn {
-    width: 36px; height: 36px; background: var(--teal-xlight);
-    border: none; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-    cursor: pointer; transition: background .15s;
-  }
-  .notif-btn:hover { background: var(--teal-light); }
-  .notif-btn svg { width: 18px; height: 18px; fill: var(--teal); }
-  .admin-chip {
-    display: flex; align-items: center; gap: 10px;
-    padding: 6px 12px 6px 8px; border: 1px solid var(--border); border-radius: 40px;
-    background: var(--white);
-  }
-  .admin-avatar {
-    width: 30px; height: 30px; border-radius: 50%; object-fit: cover;
-    background: var(--teal); display: flex; align-items: center; justify-content: center;
-    font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; overflow: hidden;
-  }
-  .admin-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
-  .admin-chip-name { font-size: 13px; font-weight: 600; color: var(--text-dark); line-height: 1.2; }
-  .admin-chip-role { font-size: 10px; color: var(--teal); }
-
-  /* ── NOTICE BANNER ───────────────────── */
-  .notice {
-    margin: 0 32px; padding: 10px 16px; border-radius: var(--radius-sm);
-    font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px;
-    background: #e6f9f0; color: #1a7a45; border: 1px solid #b2ecd1; margin-top: 20px;
-  }
-  .notice svg { width: 16px; height: 16px; fill: currentColor; flex-shrink: 0; }
-
-  /* ── CONTENT ─────────────────────────── */
-  .content { padding: 24px 32px; display: flex; flex-direction: column; gap: 22px; }
-
-  /* ── GREETING CARD ───────────────────── */
-  .greeting-card {
-    background: linear-gradient(135deg, var(--teal-dark) 0%, var(--teal-mid) 60%, var(--teal-accent) 100%);
-    border-radius: var(--radius); padding: 28px 32px; color: #fff;
-    position: relative; overflow: hidden; box-shadow: var(--shadow-md);
-  }
-  .greeting-card::before {
-    content: ''; position: absolute; top: -30px; right: -30px;
-    width: 180px; height: 180px; border-radius: 50%; background: rgba(255,255,255,.07);
-  }
-  .greeting-card::after {
-    content: ''; position: absolute; bottom: -50px; right: 80px;
-    width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,.05);
-  }
-  .greeting-time { font-size: 12px; opacity: .8; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
-  .greeting-time svg { width: 13px; height: 13px; fill: rgba(255,255,255,.8); }
-  .greeting-name { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
-  .greeting-org  { font-size: 13px; opacity: .75; margin-bottom: 18px; }
-  .greeting-badges { display: flex; gap: 10px; }
-  .gbadge {
-    background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.25);
-    border-radius: 8px; padding: 8px 16px; font-size: 12px;
-  }
-  .gbadge-label { opacity: .8; margin-bottom: 2px; }
-  .gbadge-val   { font-size: 22px; font-weight: 700; line-height: 1; }
-  .gbadge-val.empty { font-size: 16px; opacity: .6; }
-
-  /* ── STATS GRID ──────────────────────── */
-  .stats-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
-  .stat-card {
-    background: var(--white); border-radius: var(--radius);
-    padding: 20px; border: 1px solid var(--border); box-shadow: var(--shadow-sm);
-    transition: box-shadow .2s, transform .2s;
-  }
-  .stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-  .stat-icon {
-    width: 40px; height: 40px; background: var(--teal-xlight);
-    border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px;
-  }
-  .stat-icon svg { width: 20px; height: 20px; fill: var(--teal); }
-  .stat-label { font-size: 11.5px; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
-  .stat-value { font-size: 28px; font-weight: 700; color: var(--text-dark); line-height: 1; }
-
-  /* ── PANEL ───────────────────────────── */
-  .panel { background: var(--white); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow-sm); overflow: hidden; }
-  .panel-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 18px 24px 14px; border-bottom: 1px solid var(--border);
-  }
-  .panel-title { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; color: var(--text-dark); }
-
-  /* ── TABLE ───────────────────────────── */
-  table { width: 100%; border-collapse: collapse; }
-  thead th {
-    padding: 10px 20px; font-size: 10.5px; font-weight: 700;
-    color: var(--teal); text-transform: uppercase; letter-spacing: .06em;
-    text-align: left; background: var(--teal-xlight);
-  }
-  tbody tr { border-top: 1px solid var(--border); transition: background .12s; }
-  tbody tr:hover { background: var(--teal-xlight); }
-  tbody td { padding: 13px 20px; font-size: 13.5px; color: var(--text-dark); vertical-align: middle; }
-
-  .role-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; border: 1.5px solid; }
-  .role-admin   { color: #7c3aed; border-color: #ede9fe; background: #ede9fe; }
-  .role-provider { color: var(--teal-dark); border-color: var(--teal-light); background: var(--teal-xlight); }
-
-  .action-btns { display: flex; gap: 8px; align-items: center; }
-  select {
-    padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);
-    font-family: var(--font); font-size: 12px; background: var(--white);
-    cursor: pointer;
-  }
-  .btn-delete {
-    background: #fdeaea; border: none; padding: 6px 12px; border-radius: 6px;
-    color: var(--red); font-size: 12px; font-weight: 600; cursor: pointer;
-    transition: background .15s;
-  }
-  .btn-delete:hover { background: #f5c6c6; }
-  .empty-state {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 48px 24px; gap: 10px; color: var(--text-muted);
-  }
-  .empty-state svg { width: 40px; height: 40px; fill: var(--teal-light); }
-
-  @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; } .content { padding: 16px; } }
-</style>
+<link rel="stylesheet" href="css/user_management.css">
 </head>
 <body>
 
 <!-- ══ SIDEBAR ══ -->
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <div class="brand-icon"><?= icon('shield', $svg) ?></div>
+    <img src="ablecarelogo.png" alt="AbleCare Logo" style="width:50px;height:auto;">
     <div>
       <div class="brand-name">AbleCare</div>
       <div class="brand-sub">LGU Admin Portal</div>
@@ -432,6 +256,18 @@ function formatRole(string $role): string {
         <div class="panel-title">
           System Users
         </div>
+        <div class="panel-actions">
+          <!-- Export Users Button -->
+          <button class="btn-export" onclick="openModal('exportModal')">
+            <?= icon('export', $svg) ?>
+            Export Users
+          </button>
+          <!-- Add Healthcare Facilities Button -->
+          <button class="btn-add-provider" onclick="openModal('addProviderModal')">
+            <?= icon('plus', $svg) ?>
+            Add Healthcare Provider
+          </button>
+        </div>
       </div>
 
       <?php if ($users_query && $users_query->num_rows > 0): ?>
@@ -483,6 +319,141 @@ function formatRole(string $role): string {
 
   </div><!-- /content -->
 </div><!-- /main -->
+
+
+<!-- ══════════════════════════════════════════
+     MODAL: ADD HEALTHCARE PROVIDER
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="addProviderModal">
+  <div class="modal" style="max-width: 560px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Add Healthcare Provider</div>
+        <div class="modal-subtitle">Fill in the details to add a new healthcare provider to the system.</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('addProviderModal')" aria-label="Close">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+      </button>
+    </div>
+
+    <form method="POST" action="user_management.php">
+      <input type="hidden" name="add_provider" value="1">
+      <div class="modal-body">
+
+        <div class="form-row">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" for="first_name">First Name</label>
+            <input class="form-input" type="text" id="first_name" name="first_name" placeholder="Enter first name" required>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" for="last_name">Last Name</label>
+            <input class="form-input" type="text" id="last_name" name="last_name" placeholder="Enter last name" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="provider_email">Email Address</label>
+          <input class="form-input" type="email" id="provider_email" name="provider_email" placeholder="provider@example.com" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="contact_number">Contact Number</label>
+          <input class="form-input" type="text" id="contact_number" name="contact_number" placeholder="0912-345-6789">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="barangay">Barangay</label>
+          <input class="form-input" type="text" id="barangay" name="barangay" placeholder="Brgy. San Jose">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="specialization">Specialization</label>
+          <input class="form-input" type="text" id="specialization" name="specialization" placeholder="e.g., General Practitioner, Cardiologist">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="license_number">License Number</label>
+          <input class="form-input" type="text" id="license_number" name="license_number" placeholder="PRC License Number">
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-cancel" onclick="closeModal('addProviderModal')">Cancel</button>
+        <button type="submit" class="btn-primary">Add Provider</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     MODAL: EXPORT USERS
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="exportModal">
+  <div class="modal" style="max-width: 440px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Export Users</div>
+        <div class="modal-subtitle">Select the format to export user data:</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('exportModal')" aria-label="Close">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="export-options">
+        <button class="export-option" onclick="exportUsers('csv')">Export as CSV</button>
+        <button class="export-option" onclick="exportUsers('xlsx')">Export as Excel (XLSX)</button>
+        <button class="export-option" onclick="exportUsers('pdf')">Export as PDF</button>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn-cancel" onclick="closeModal('exportModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  // ── Modal helpers ──────────────────────
+  function openModal(id) {
+    const overlay = document.getElementById(id);
+    if (overlay) {
+      overlay.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeModal(id) {
+    const overlay = document.getElementById(id);
+    if (overlay) {
+      overlay.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+  }
+
+  // Close modal when clicking the backdrop
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', function(e) {
+      if (e.target === this) closeModal(this.id);
+    });
+  });
+
+  // Close modal on Escape key
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.active').forEach(o => closeModal(o.id));
+    }
+  });
+
+  // ── Export handler ─────────────────────
+  function exportUsers(format) {
+    closeModal('exportModal');
+    window.location.href = 'export_users.php?format=' + format;
+  }
+</script>
 
 </body>
 </html>
