@@ -1,0 +1,4 @@
+# Some PHP/Apache configurations (e.g. php-cgi) drop the Authorization
+# header before it reaches PHP. This forces it through so bearer-token
+# auth in helpers.php works consistently.
+CGIPassAuth On

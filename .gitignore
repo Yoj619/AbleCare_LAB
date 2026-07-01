@@ -1,0 +1,20 @@
+# Environment secrets
+.env
+
+# Logs generated at runtime
+logs/
+
+# User-uploaded files
+backend/uploads/*/*
+!backend/uploads/*/.gitkeep
+
+# macOS
+.DS_Store
+
+# Node / mobile-app
+mobile-app/node_modules/
+mobile-app/.expo/
+
+# PHP dependency managers
+vendor/
+composer.lock

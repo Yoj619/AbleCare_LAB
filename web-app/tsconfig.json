@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2019",
+    "lib": ["ES2019", "DOM"],
+    "module": "none",
+    "strict": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "outDir": "js",
+    "rootDir": "ts",
+    "types": ["leaflet"],
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["ts/**/*.ts"]
+}

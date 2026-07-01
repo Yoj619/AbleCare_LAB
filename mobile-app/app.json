@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "mobile-app",
+    "slug": "mobile-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "AbleCare uses your microphone to capture voice descriptions of patient symptoms.",
+        "NSLocationWhenInUseUsageDescription": "AbleCare uses your location to share your position with emergency responders when you trigger an alert."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "permissions": ["android.permission.RECORD_AUDIO", "android.permission.ACCESS_FINE_LOCATION"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      ["expo-location", {
+        "locationWhenInUsePermission": "ABLECARE needs your location to send accurate emergency alerts."
+      }]
+    ]
+  }
+}
