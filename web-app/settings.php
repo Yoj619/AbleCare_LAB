@@ -6,27 +6,17 @@
 
 session_start();
 
-if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'lgu_admin') {
-    header('Location: login.php');
-    exit;
-}
+// ── Session guard (uncomment when DB is ready) ──
+// if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'lgu_admin') {
+//     header('Location: login.php');
+//     exit;
+// }
 
-require_once 'db.php';
-$db = get_db();
-
-// Load current admin data from DB
-$_stmt = $db->prepare('SELECT first_name, last_name, email, phone_number, profile_photo_path FROM users WHERE id=? LIMIT 1');
-$_stmt->bind_param('i', $_SESSION['user_id']);
-$_stmt->execute();
-$_row = $_stmt->get_result()->fetch_assoc();
-$_stmt->close();
-
+// ── Current logged-in admin (mock for front-end) ──
 $admin = [
-    'name'   => trim(($_row['first_name'] ?? '') . ' ' . ($_row['last_name'] ?? '')) ?: ($_SESSION['full_name'] ?? 'Administrator'),
-    'role'   => $_SESSION['role'] ?? 'lgu_admin',
-    'avatar' => !empty($_row['profile_photo_path']) ? '/AbleCare/' . $_row['profile_photo_path'] : ($_SESSION['avatar'] ?? ''),
-    'email'  => $_row['email'] ?? ($_SESSION['email'] ?? ''),
-    'phone'  => $_row['phone_number'] ?? '',
+    'name'   => $_SESSION['full_name'] ?? 'Maria Elena Santos',
+    'role'   => $_SESSION['role']      ?? 'lgu_admin',
+    'avatar' => $_SESSION['avatar']    ?? '',
 ];
 
 // ── Nav items ──
@@ -56,7 +46,8 @@ $svg = [
     'lock'            => '<path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>',
     'eye'             => '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>',
     'eye-off'         => '<path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>',
-    'check'           => '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>',
+    'camera'          => '<path d="M12 15.2A3.2 3.2 0 1 1 12 8.8a3.2 3.2 0 0 1 0 6.4zm7.2-10.4h-2.28L15.2 3H8.8L7.08 4.8H4.8A1.6 1.6 0 0 0 3.2 6.4v11.2A1.6 1.6 0 0 0 4.8 19.2h14.4a1.6 1.6 0 0 0 1.6-1.6V6.4a1.6 1.6 0 0 0-1.6-1.6z"/>',
+    'back'            => '<path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>',
     'close'           => '<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>',
 ];
 
@@ -88,7 +79,7 @@ $admin_initials = strtoupper(substr($admin['name'], 0, 1));
 <!-- ══ SIDEBAR ══ -->
 <aside class="sidebar">
   <div class="sidebar-brand">
-      <img src="image/ablecarelogo.png" alt="AbleCare Logo" style="width:56px;height:56px;object-fit:contain;">
+      <img src="image/ablecarelogo.png" alt="AbleCare Logo" style="width:50px;height:auto;">
     <div>
       <div class="brand-name">AbleCare</div>
       <div class="brand-sub">LGU Admin Portal</div>
@@ -157,6 +148,89 @@ $admin_initials = strtoupper(substr($admin['name'], 0, 1));
       </div>
     </div>
 
+    <!-- ── PROFILE PICTURE ── -->
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <div class="settings-card-icon"><?= icon('camera', $svg) ?></div>
+        <div>
+          <div class="settings-card-title">Profile Picture</div>
+          <div class="settings-card-subtitle">Click the camera icon to update your profile photo</div>
+        </div>
+      </div>
+      <div class="settings-card-body">
+        <!-- Hidden file input -->
+        <input type="file" id="profilePicInput" accept="image/*" style="display:none;" onchange="handleProfilePicChange(event)">
+
+        <div class="profile-pic-wrapper">
+          <!-- Circle with camera badge -->
+          <div class="profile-pic-container">
+            <div class="profile-pic-circle" id="profilePicCircle">
+              <?php if (!empty($admin['avatar'])): ?>
+                <img src="<?= htmlspecialchars($admin['avatar']) ?>" alt="Profile" id="profilePicPreview" class="profile-pic-img">
+              <?php else: ?>
+                <span class="profile-pic-initials" id="profilePicInitials"><?= $admin_initials ?></span>
+                <img src="" alt="Profile" id="profilePicPreview" class="profile-pic-img" style="display:none;">
+              <?php endif; ?>
+            </div>
+            <!-- Camera button -->
+            <button type="button" class="profile-cam-btn" id="camBtn" onclick="togglePicMenu(event)" aria-label="Change profile picture">
+              <?= icon('camera', $svg) ?>
+            </button>
+            <!-- Dropdown -->
+            <div class="profile-pic-menu" id="profilePicMenu">
+              <button type="button" class="pic-menu-item" onclick="openViewProfileModal()">
+                <?= icon('eye', $svg) ?> View Profile
+              </button>
+              <button type="button" class="pic-menu-item" onclick="triggerPicInput()">
+                <?= icon('camera', $svg) ?> Change Profile
+              </button>
+              <button type="button" class="pic-menu-item pic-menu-back" onclick="closePicMenu()">
+                <?= icon('back', $svg) ?> Back
+              </button>
+            </div>
+          </div>
+
+          <!-- Info beside photo -->
+          <div class="profile-pic-info">
+            <div class="profile-pic-name"><?= htmlspecialchars($admin['name']) ?></div>
+            <div class="profile-pic-role"><?= formatRole($admin['role']) ?></div>
+            <div class="profile-pic-office">
+              <?= icon('facilities', $svg) ?>
+              Municipality of Nasugbu, Batangas
+            </div>
+            <div class="profile-pic-hint">Supported: JPG, PNG, GIF &bull; Max size: 5MB</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- View Profile Modal -->
+    <div class="modal-overlay" id="modalViewProfile">
+      <div class="modal-box">
+        <button class="modal-x" onclick="closeModal('modalViewProfile')">&times;</button>
+        <div class="modal-profile-head">
+          <div class="modal-pic-circle" id="modalPicCircle">
+            <?php if (!empty($admin['avatar'])): ?>
+              <img src="<?= htmlspecialchars($admin['avatar']) ?>" alt="Profile" id="modalPicImg" class="modal-pic-img">
+            <?php else: ?>
+              <span class="modal-pic-initials" id="modalPicInitials"><?= $admin_initials ?></span>
+              <img src="" alt="Profile" id="modalPicImg" class="modal-pic-img" style="display:none;">
+            <?php endif; ?>
+          </div>
+          <div class="modal-profile-name"><?= htmlspecialchars($admin['name']) ?></div>
+          <div class="modal-profile-role"><?= formatRole($admin['role']) ?></div>
+        </div>
+        <div class="modal-profile-details">
+          <div class="mpd-row"><span class="mpd-label">Office</span><span class="mpd-value">Municipality of Nasugbu, Batangas</span></div>
+          <div class="mpd-row"><span class="mpd-label">Email</span><span class="mpd-value">maria.santos@nasugbu.gov.ph</span></div>
+          <div class="mpd-row"><span class="mpd-label">Contact</span><span class="mpd-value">0965-457-1094</span></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-primary" onclick="closeModal('modalViewProfile')" style="flex:unset; padding:10px 32px;">Close</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── PROFILE INFORMATION ── -->
     <div class="settings-card">
       <div class="settings-card-header">
@@ -165,28 +239,12 @@ $admin_initials = strtoupper(substr($admin['name'], 0, 1));
           <div class="settings-card-title">Profile Information</div>
         </div>
       </div>
-      <form id="profileForm" enctype="multipart/form-data">
+      <form method="POST" action="settings.php" id="profileForm">
+        <input type="hidden" name="action" value="update_profile">
         <div class="settings-card-body">
 
-          <div id="profileNotice" class="notice-success" style="display:none;">
-            <?= icon('check', $svg) ?> <span id="profileNoticeMsg">Profile updated successfully.</span>
-          </div>
-          <div id="profileError" class="notice-error" style="display:none;"></div>
-
-          <!-- Profile picture -->
-          <div style="display:flex;align-items:center;gap:18px;margin-bottom:20px;">
-            <div id="avatarPreviewWrap" style="width:72px;height:72px;border-radius:50%;overflow:hidden;background:var(--teal-light,#d4efed);display:flex;align-items:center;justify-content:center;flex-shrink:0;border:2px solid var(--teal,#3aafa9);">
-              <?php if (!empty($admin['avatar'])): ?>
-                <img id="avatarPreview" src="<?= htmlspecialchars($admin['avatar']) ?>" alt="Photo" style="width:100%;height:100%;object-fit:cover;">
-              <?php else: ?>
-                <span id="avatarInitials" style="font-size:24px;font-weight:700;color:var(--teal,#3aafa9);"><?= htmlspecialchars($admin_initials) ?></span>
-              <?php endif; ?>
-            </div>
-            <div>
-              <label class="form-label" style="display:block;margin-bottom:6px;">Profile Photo</label>
-              <input type="file" id="profile_picture" name="profile_picture" accept="image/*" style="font-size:13px;" onchange="previewPhoto(this)">
-              <div style="font-size:12px;color:#999;margin-top:4px;">JPG, PNG or WebP · Max 2 MB</div>
-            </div>
+          <div id="profileNotice" class="notice-success">
+            <?= icon('check', $svg) ?> Profile updated successfully.
           </div>
 
           <div class="form-row">
@@ -197,9 +255,24 @@ $admin_initials = strtoupper(substr($admin['name'], 0, 1));
                      placeholder="Your full name">
             </div>
             <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label" for="contact_number">Contact Number</label>
+              <label class="form-label" for="designation">Designation <span class="required">*</span></label>
+              <input class="form-input" type="text" id="designation" name="designation"
+                     value="<?= htmlspecialchars(formatRole($admin['role'])) ?>"
+                     placeholder="e.g., LGU Health Administrator">
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-top:18px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="lgu_office">LGU Office <span class="required">*</span></label>
+              <input class="form-input" type="text" id="lgu_office" name="lgu_office"
+                     value="Municipality of Nasugbu"
+                     placeholder="Your office / unit">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" for="contact_number">Contact Number <span class="required">*</span></label>
               <input class="form-input" type="text" id="contact_number" name="contact_number"
-                     value="<?= htmlspecialchars($admin['phone']) ?>"
+                     value="0965-457-1094"
                      placeholder="0912-345-6789">
             </div>
           </div>
@@ -207,13 +280,13 @@ $admin_initials = strtoupper(substr($admin['name'], 0, 1));
           <div class="form-group" style="margin-top:18px; margin-bottom:0;">
             <label class="form-label" for="email_address">Email Address <span class="required">*</span></label>
             <input class="form-input" type="email" id="email_address" name="email_address"
-                   value="<?= htmlspecialchars($admin['email']) ?>"
+                   value="maria.santos@nasugbu.gov.ph"
                    placeholder="you@example.com">
           </div>
 
         </div>
         <div class="settings-card-footer">
-          <button type="button" class="btn-primary" onclick="submitProfile()">
+          <button type="button" class="btn-primary" onclick="submitProfile(event)">
             <?= icon('check', $svg) ?> Save Changes
           </button>
           <button type="button" class="btn-cancel" onclick="resetProfile()">
@@ -236,10 +309,9 @@ $admin_initials = strtoupper(substr($admin['name'], 0, 1));
         <input type="hidden" name="action" value="update_password">
         <div class="settings-card-body">
 
-          <div id="passwordNotice" class="notice-success" style="display:none;">
+          <div id="passwordNotice" class="notice-success">
             <?= icon('check', $svg) ?> Password updated successfully.
           </div>
-          <div id="passwordError" class="notice-error" style="display:none;"></div>
 
           <div class="form-group">
             <label class="form-label" for="current_password">Current Password <span class="required">*</span></label>
@@ -276,7 +348,7 @@ $admin_initials = strtoupper(substr($admin['name'], 0, 1));
 
         </div>
         <div class="settings-card-footer">
-          <button type="button" class="btn-primary" onclick="submitPassword()">
+          <button type="button" class="btn-primary" onclick="submitPassword(event)">
             <?= icon('lock', $svg) ?> Update Password
           </button>
           <button type="button" class="btn-cancel" onclick="document.getElementById('passwordForm').reset()">
@@ -290,64 +362,60 @@ $admin_initials = strtoupper(substr($admin['name'], 0, 1));
 </div><!-- /main -->
 
 <script>
-  const API = '/AbleCare/backend/api/users/update-profile.php';
-
-  function previewPhoto(input) {
-    if (!input.files || !input.files[0]) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const wrap = document.getElementById('avatarPreviewWrap');
-      wrap.innerHTML = `<img id="avatarPreview" src="${e.target.result}" alt="Photo" style="width:100%;height:100%;object-fit:cover;">`;
-    };
-    reader.readAsDataURL(input.files[0]);
+  // ── Profile Picture ──────────────────────
+  function togglePicMenu(e) {
+    e.stopPropagation();
+    document.getElementById('profilePicMenu').classList.toggle('open');
   }
-
-  function showBanner(id, msg, isError) {
-    const el = document.getElementById(id);
-    el.textContent = msg;
-    el.style.display = 'flex';
-    setTimeout(() => { el.style.display = 'none'; }, 4000);
+  function closePicMenu() {
+    document.getElementById('profilePicMenu').classList.remove('open');
   }
-
-  async function submitProfile() {
-    if (!confirm('Are you sure you want to save these changes?')) return;
-    const notice = document.getElementById('profileNotice');
-    const errEl  = document.getElementById('profileError');
-    notice.style.display = 'none';
-    errEl.style.display  = 'none';
-
-    const fd = new FormData(document.getElementById('profileForm'));
-    fd.append('action', 'update_profile');
-
-    // Split full_name into first/last
-    const nameParts = (fd.get('full_name') || '').trim().split(/\s+/);
-    fd.append('first_name', nameParts[0] || '');
-    fd.append('last_name', nameParts.slice(1).join(' ') || nameParts[0] || '');
-
-    const res  = await fetch(API, { method: 'POST', body: fd });
-    const json = await res.json();
-
-    if (json.error) {
-      errEl.textContent   = json.error;
-      errEl.style.display = 'flex';
+  function triggerPicInput() {
+    closePicMenu();
+    document.getElementById('profilePicInput').click();
+  }
+  function handleProfilePicChange(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File is too large. Maximum allowed size is 5MB.');
+      event.target.value = '';
       return;
     }
-
-    document.getElementById('profileNoticeMsg').textContent = json.data.message;
-    notice.style.display = 'flex';
-    if (json.data.avatar) {
-      const wrap = document.getElementById('avatarPreviewWrap');
-      wrap.innerHTML = `<img src="${json.data.avatar}" alt="Photo" style="width:100%;height:100%;object-fit:cover;">`;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const src = e.target.result;
+      // Main preview
+      const prev = document.getElementById('profilePicPreview');
+      const init = document.getElementById('profilePicInitials');
+      prev.src = src; prev.style.display = 'block';
+      if (init) init.style.display = 'none';
+      // Modal preview
+      const mImg = document.getElementById('modalPicImg');
+      const mInit = document.getElementById('modalPicInitials');
+      mImg.src = src; mImg.style.display = 'block';
+      if (mInit) mInit.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  }
+  function openViewProfileModal() {
+    closePicMenu();
+    document.getElementById('modalViewProfile').classList.add('open');
+  }
+  function closeModal(id) {
+    document.getElementById(id).classList.remove('open');
+  }
+  // Close menu/modal on outside click
+  document.addEventListener('click', function(e) {
+    const menu = document.getElementById('profilePicMenu');
+    const btn  = document.getElementById('camBtn');
+    if (menu && !menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+      menu.classList.remove('open');
     }
-    setTimeout(() => { notice.style.display = 'none'; }, 4000);
-  }
-
-  function resetProfile() {
-    document.getElementById('profileForm').reset();
-    document.getElementById('profileNotice').style.display = 'none';
-    document.getElementById('profileError').style.display  = 'none';
-  }
-
+  });
+  document.querySelectorAll('.modal-overlay').forEach(o => {
+    o.addEventListener('click', function(e) { if (e.target === this) closeModal(this.id); });
+  });
   function togglePw(inputId, btn) {
     const input = document.getElementById(inputId);
     const isText = input.type === 'text';
@@ -357,28 +425,38 @@ $admin_initials = strtoupper(substr($admin['name'], 0, 1));
       : `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>`;
   }
 
-  async function submitPassword() {
-    if (!confirm('Are you sure you want to save these changes?')) return;
-    const notice = document.getElementById('passwordNotice');
-    const errEl  = document.getElementById('passwordError');
-    notice.style.display = 'none';
-    errEl.style.display  = 'none';
+  // ── Profile form submit (front-end demo) ─
+  function submitProfile(e) {
+    e.preventDefault();
+    const notice = document.getElementById('profileNotice');
+    notice.classList.add('show');
+    setTimeout(() => notice.classList.remove('show'), 3500);
+    // TODO: replace with fetch/AJAX when DB is ready
+  }
 
-    const fd = new FormData(document.getElementById('passwordForm'));
-    fd.append('action', 'update_password');
+  function resetProfile() {
+    document.getElementById('profileForm').reset();
+    document.getElementById('profileNotice').classList.remove('show');
+  }
 
-    const res  = await fetch(API, { method: 'POST', body: fd });
-    const json = await res.json();
-
-    if (json.error) {
-      errEl.textContent   = json.error;
-      errEl.style.display = 'flex';
+  // ── Password form submit (front-end demo) ─
+  function submitPassword(e) {
+    e.preventDefault();
+    const np = document.getElementById('new_password').value;
+    const cp = document.getElementById('confirm_password').value;
+    if (np !== cp) {
+      alert('New password and confirmation do not match.');
       return;
     }
-
-    notice.style.display = 'flex';
+    if (np.length < 8) {
+      alert('Password must be at least 8 characters.');
+      return;
+    }
+    const notice = document.getElementById('passwordNotice');
+    notice.classList.add('show');
     document.getElementById('passwordForm').reset();
-    setTimeout(() => { notice.style.display = 'none'; }, 4000);
+    setTimeout(() => notice.classList.remove('show'), 3500);
+    // TODO: replace with fetch/AJAX when DB is ready
   }
 </script>
 
