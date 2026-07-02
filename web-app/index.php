@@ -5,7 +5,415 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>AbleCare</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="css/index.css">
+  <link rel="stylesheet" href="css/index.css">
+
+  <!--
+    ISSUE: Improve Dashboard UI
+    The block below adds consistency + responsiveness fixes on top of the
+    existing css/index.css. It does not replace that file — it patches
+    spacing, type scale, color tokens, and small-screen layout so nothing
+    breaks if index.css already sets these properties differently.
+    Once verified, these rules should be merged into css/index.css directly.
+  -->
+  <style>
+    /* ---------- 1. Consistent design tokens ---------- */
+    :root {
+      --font-heading: 'Poppins', sans-serif;
+      --font-body: 'Open Sans', sans-serif;
+
+      --color-primary: #2f7d6b;      /* AbleCare green accent */
+      --color-primary-dark: #235c4f;
+      --color-text: #1f2937;
+      --color-text-muted: #5b6472;
+      --color-bg: #ffffff;
+      --color-bg-alt: #f6f8f7;
+      --color-border: #e3e7e5;
+
+      --space-xs: 8px;
+      --space-sm: 16px;
+      --space-md: 24px;
+      --space-lg: 40px;
+      --space-xl: 64px;
+
+      --radius-md: 12px;
+      --shadow-card: 0 2px 10px rgba(0,0,0,0.06);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: var(--font-body);
+      color: var(--color-text);
+      margin: 0;
+      line-height: 1.6;
+    }
+
+    h1, h2, h3, h4 {
+      font-family: var(--font-heading);
+      color: var(--color-text);
+      margin: 0 0 var(--space-sm);
+    }
+
+    /* ---------- 2. Consistent section spacing ---------- */
+    section, footer {
+      padding: var(--space-xl) var(--space-md);
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: clamp(1.5rem, 2.5vw, 2rem);
+      font-weight: 700;
+      margin-bottom: var(--space-xs);
+    }
+
+    .section-underline {
+      width: 60px;
+      height: 4px;
+      background: var(--color-primary);
+      margin: 0 auto var(--space-lg);
+      border-radius: 2px;
+    }
+
+    /* ---------- 3. Navbar consistency ---------- */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-sm) var(--space-md);
+      border-bottom: 1px solid var(--color-border);
+      background: var(--color-bg);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: var(--color-text);
+      text-decoration: none;
+    }
+
+    .nav-links {
+      display: flex;
+      list-style: none;
+      gap: var(--space-md);
+      margin: 0;
+      padding: 0;
+      font-weight: 600;
+    }
+
+    .nav-links a {
+      color: var(--color-text);
+      text-decoration: none;
+    }
+
+    .nav-links a:hover,
+    .nav-links a:focus-visible {
+      color: var(--color-primary);
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: var(--space-sm);
+    }
+
+    .btn-outline, .btn-solid,
+    .btn-banner-outline, .btn-banner-solid {
+      font-family: var(--font-heading);
+      font-weight: 600;
+      font-size: 0.95rem;
+      padding: 10px 20px;
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      display: inline-block;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    .btn-outline {
+      color: var(--color-primary);
+      border: 1.5px solid var(--color-primary);
+      background: transparent;
+    }
+
+    .btn-solid, .btn-banner-solid {
+      color: #fff;
+      background: var(--color-primary);
+      border: 1.5px solid var(--color-primary);
+    }
+
+    .btn-banner-outline {
+      color: var(--color-primary);
+      border: 1.5px solid var(--color-primary);
+      background: transparent;
+    }
+
+    .btn-outline:hover, .btn-solid:hover,
+    .btn-banner-outline:hover, .btn-banner-solid:hover {
+      transform: translateY(-2px);
+      opacity: 0.92;
+    }
+
+    /* ---------- 4. Main banner ---------- */
+    .main-banner {
+      text-align: center;
+      background: var(--color-bg-alt);
+    }
+
+    .main-banner-content {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .banner-logo {
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+      margin-bottom: var(--space-sm);
+    }
+
+    .main-banner h1 {
+      font-size: clamp(2rem, 4vw, 2.75rem);
+    }
+
+    .subtitle {
+      font-weight: 600;
+      color: var(--color-primary-dark);
+      margin-bottom: var(--space-sm);
+      font-size: 1.05rem;
+    }
+
+    .main-banner p {
+      color: var(--color-text-muted);
+      margin-bottom: var(--space-lg);
+    }
+
+    .main-banner-buttons {
+      display: flex;
+      justify-content: center;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }
+
+    /* ---------- 5. Card grids (features / steps) — consistent look ---------- */
+    .features-grid, .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--space-md);
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .feature-card, .step-card {
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-card);
+      padding: var(--space-md);
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-xs);
+    }
+
+    .feature-icon svg, .step-icon svg {
+      width: 32px;
+      height: 32px;
+      stroke: var(--color-primary);
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .feature-card h3, .step-card h3 {
+      font-size: 1.05rem;
+      margin: var(--space-xs) 0 4px;
+    }
+
+    .feature-card p, .step-card p {
+      font-size: 0.92rem;
+      color: var(--color-text-muted);
+      margin: 0;
+    }
+
+    .step-card {
+      position: relative;
+    }
+
+    .step-number {
+      position: absolute;
+      top: -14px;
+      left: -14px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--color-primary);
+      color: #fff;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+    }
+
+    .how-section {
+      background: var(--color-bg-alt);
+    }
+
+    /* ---------- 6. About section ---------- */
+    .about-box {
+      max-width: 800px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .about-box > p {
+      color: var(--color-text-muted);
+      margin-bottom: var(--space-lg);
+    }
+
+    .stats-row {
+      display: flex;
+      justify-content: center;
+      gap: var(--space-xl);
+      flex-wrap: wrap;
+    }
+
+    .stat h2 {
+      color: var(--color-primary);
+      font-size: 2rem;
+      margin-bottom: 4px;
+    }
+
+    .stat p {
+      color: var(--color-text-muted);
+      margin: 0;
+      font-size: 0.9rem;
+    }
+
+    /* ---------- 7. Footer consistency ---------- */
+    footer {
+      background: var(--color-text);
+      color: #dfe4e2;
+    }
+
+    .footer-top {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-lg);
+      max-width: 1100px;
+      margin: 0 auto var(--space-lg);
+    }
+
+    .footer-col { flex: 1; min-width: 220px; }
+
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: #fff;
+      margin-bottom: var(--space-xs);
+    }
+
+    .footer-col h4 {
+      color: #fff;
+      font-size: 1rem;
+      margin-bottom: var(--space-xs);
+    }
+
+    .footer-col ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .footer-col a {
+      color: #c7cfcc;
+      text-decoration: none;
+      font-size: 0.92rem;
+    }
+
+    .footer-col a:hover, .footer-col a:focus-visible {
+      color: #fff;
+    }
+
+    .footer-bottom {
+      border-top: 1px solid rgba(255,255,255,0.15);
+      padding-top: var(--space-sm);
+      text-align: center;
+      font-size: 0.85rem;
+      color: #a9b2af;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    /* ---------- 8. Responsiveness (smaller screens) ---------- */
+    @media (max-width: 960px) {
+      .features-grid, .steps-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 768px) {
+      nav {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .nav-links {
+        flex-wrap: wrap;
+        gap: var(--space-sm);
+      }
+
+      section, footer {
+        padding: var(--space-lg) var(--space-sm);
+      }
+
+      .stats-row {
+        gap: var(--space-lg);
+      }
+    }
+
+    @media (max-width: 520px) {
+      .features-grid, .steps-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .main-banner-buttons {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .btn-banner-outline, .btn-banner-solid {
+        text-align: center;
+      }
+
+      .footer-top {
+        flex-direction: column;
+        gap: var(--space-md);
+      }
+    }
+
+    /* ---------- 9. Accessibility ---------- */
+    a:focus-visible, button:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+  </style>
 </head>
 <body>
 
@@ -173,7 +581,7 @@
       <h4>Contact</h4>
       <ul>
         <li><a href="mailto:Support@ablecare.com">Support@ablecare.com</a></li>
-        <li><a href="#">63+ 9654571094</a></li>
+        <li><a href="tel:+639654571094">+63 965 457 1094</a></li>
         <li><a href="#">Municipality of Nasugbu</a></li>
       </ul>
     </div>
