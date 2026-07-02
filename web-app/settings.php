@@ -1,8 +1,5 @@
 <?php
-// ============================================================
-//  ABLECARE – Account Settings
-//  Municipality of Nasugbu, Batangas
-// ============================================================
+
 
 session_start();
 
