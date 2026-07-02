@@ -129,6 +129,7 @@ function formatRole(string $role): string {
 <title>AbleCare – Emergency Monitor</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/emergency_monitor.css">
+<link rel="stylesheet" href="node_modules/leaflet/dist/leaflet.css">
 <style>
 /* ── Alert card grid ──────────────────────────────────────────────────── */
 .alerts-grid {
@@ -275,6 +276,78 @@ function formatRole(string $role): string {
 .stat-card-active {
   border-color: #fde8e2 !important;
   background: linear-gradient(135deg, #fff8f7, #fff) !important;
+}
+
+/* ── View button ──────────────────────────────────────────────────────────── */
+.btn-view-card {
+  background: #eaf6f5;
+  color: #2a7c7c;
+  border-color: #b2d8d6;
+  flex: 0 0 auto;
+  padding: 7px 14px;
+}
+.btn-view-card:hover { background: #d2eeec; }
+
+/* ── Map modal ────────────────────────────────────────────────────────────── */
+#mapModal .modal { max-width: 820px; width: 96vw; }
+
+.map-modal-body {
+  display: flex;
+  gap: 0;
+  min-height: 360px;
+}
+
+.map-info-panel {
+  width: 220px;
+  flex-shrink: 0;
+  padding: 18px 16px;
+  border-right: 1px solid #dde8e7;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: #f8fbfb;
+}
+.map-info-section { display: flex; flex-direction: column; gap: 4px; }
+.map-info-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+  color: #9db8b8;
+}
+.map-info-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1c3030;
+  line-height: 1.4;
+}
+.map-info-sub {
+  font-size: 11.5px;
+  color: #5a7070;
+  line-height: 1.4;
+}
+.map-coords-val {
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 11.5px;
+  color: #3aafa9;
+  font-weight: 600;
+  word-break: break-all;
+}
+.map-no-location {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: #9db8b8;
+  font-size: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+#emMapDiv {
+  flex: 1;
+  min-height: 360px;
+  z-index: 0;
 }
 </style>
 </head>
@@ -488,6 +561,12 @@ function formatRole(string $role): string {
 
             <!-- Footer: action buttons -->
             <div class="alert-card-foot">
+              <button class="btn-card btn-view-card"
+                      onclick="openMapModal(<?= (int)$alert['id'] ?>)"
+                      title="View location on map">
+                <svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:currentColor;vertical-align:middle;margin-right:4px;margin-top:-1px;"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                View
+              </button>
               <?php if ($alert['status'] === 'active'): ?>
               <button class="btn-card btn-responded-card"
                       onclick="updateStatus(<?= (int)$alert['id'] ?>, 'responded', this)">
@@ -508,6 +587,61 @@ function formatRole(string $role): string {
 
   </div><!-- /content -->
 </div><!-- /main -->
+
+
+<!-- ══════════════════════════════════════════
+     MODAL: EMERGENCY LOCATION MAP
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="mapModal">
+  <div class="modal" style="padding:0;overflow:hidden;">
+    <div class="modal-header" style="padding:14px 18px;">
+      <div>
+        <div class="modal-title">Emergency Location</div>
+        <div class="modal-subtitle" id="mapModalSubtitle">Caller's GPS-reported position</div>
+      </div>
+      <button class="modal-close" onclick="closeMapModal()" title="Close">
+        <?= icon('close', $svg) ?>
+      </button>
+    </div>
+
+    <div class="map-modal-body">
+      <!-- Info panel -->
+      <div class="map-info-panel">
+        <div class="map-info-section">
+          <div class="map-info-label">Caregiver</div>
+          <div class="map-info-val" id="miCaregiver">—</div>
+          <div class="map-info-sub" id="miPhone">—</div>
+        </div>
+        <div class="map-info-section">
+          <div class="map-info-label">Patient</div>
+          <div class="map-info-val" id="miPatient">—</div>
+        </div>
+        <div class="map-info-section">
+          <div class="map-info-label">Triggered</div>
+          <div class="map-info-val" id="miTime">—</div>
+        </div>
+        <div class="map-info-section">
+          <div class="map-info-label">GPS Coordinates</div>
+          <div class="map-coords-val" id="miCoords">—</div>
+        </div>
+        <div class="map-info-section">
+          <div class="map-info-label">Status</div>
+          <div class="map-info-val" id="miStatus">—</div>
+        </div>
+      </div>
+
+      <!-- Map container / no-location fallback -->
+      <div id="emMapDiv"></div>
+      <div class="map-no-location" id="emMapNoLocation" style="display:none;">
+        📍 Location data unavailable for this alert.
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeMapModal()">Close</button>
+    </div>
+  </div>
+</div>
 
 
 <!-- ══════════════════════════════════════════
@@ -650,6 +784,110 @@ function exportReport(format) {
   var to   = document.getElementById('report_date_to').value;
   closeModal('downloadReportModal');
   window.location.href = 'export_emergency_report.php?format=' + format + '&from=' + from + '&to=' + to;
+}
+</script>
+
+<script src="node_modules/leaflet/dist/leaflet.js"></script>
+<script>
+// ── Alert data embedded from PHP ────────────────────────────────────────────
+var ALERT_DATA = <?= json_encode(
+  array_column(
+    array_map(function($a) {
+      return [
+        'id'            => (int) $a['id'],
+        'caregiver'     => $a['caregiver_name'],
+        'patient'       => $a['patient_name'],
+        'phone'         => $a['phone_number'] ?? '',
+        'time'          => date('M j, Y · g:i A', strtotime($a['created_at'])),
+        'status'        => ucfirst($a['status']),
+        'lat'           => $a['latitude']  !== null ? (float) $a['latitude']  : null,
+        'lng'           => $a['longitude'] !== null ? (float) $a['longitude'] : null,
+      ];
+    }, $alerts),
+    null,
+    'id'
+  ),
+  JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+) ?>;
+
+// ── Map state ───────────────────────────────────────────────────────────────
+var emMap    = null;
+var emMarker = null;
+
+function openMapModal(alertId) {
+  var data = ALERT_DATA[alertId];
+  if (!data) return;
+
+  // Populate info panel
+  document.getElementById('miCaregiver').textContent = data.caregiver || '—';
+  document.getElementById('miPhone').textContent     = data.phone     || '—';
+  document.getElementById('miPatient').textContent   = data.patient   || '—';
+  document.getElementById('miTime').textContent      = data.time      || '—';
+  document.getElementById('miStatus').textContent    = data.status    || '—';
+  document.getElementById('mapModalSubtitle').textContent = data.caregiver + ' · ' + data.time;
+
+  var hasLocation = data.lat !== null && data.lng !== null;
+  document.getElementById('emMapDiv').style.display        = hasLocation ? '' : 'none';
+  document.getElementById('emMapNoLocation').style.display = hasLocation ? 'none' : '';
+
+  if (hasLocation) {
+    document.getElementById('miCoords').textContent =
+      data.lat.toFixed(7) + ', ' + data.lng.toFixed(7);
+  } else {
+    document.getElementById('miCoords').textContent = '—';
+  }
+
+  // Show modal
+  var overlay = document.getElementById('mapModal');
+  overlay.classList.add('active');
+  document.body.style.overflow = 'hidden';
+
+  if (!hasLocation) return;
+
+  var lat = data.lat;
+  var lng = data.lng;
+
+  if (!emMap) {
+    // First open — initialise Leaflet
+    emMap = L.map('emMapDiv').setView([lat, lng], 16);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(emMap);
+    emMarker = L.marker([lat, lng]).addTo(emMap);
+    emMarker.bindPopup(
+      '<strong>' + esc(data.caregiver) + '</strong><br>' +
+      'Patient: ' + esc(data.patient)  + '<br>' +
+      esc(data.time)
+    ).openPopup();
+  } else {
+    // Subsequent opens — reposition
+    emMarker.setLatLng([lat, lng]);
+    emMarker.setPopupContent(
+      '<strong>' + esc(data.caregiver) + '</strong><br>' +
+      'Patient: ' + esc(data.patient)  + '<br>' +
+      esc(data.time)
+    );
+    emMap.setView([lat, lng], 16);
+    emMarker.openPopup();
+  }
+
+  // Leaflet needs a size recalculation after becoming visible
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() {
+      emMap.invalidateSize();
+    });
+  });
+}
+
+function closeMapModal() {
+  closeModal('mapModal');
+}
+
+function esc(str) {
+  var d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
 }
 </script>
 

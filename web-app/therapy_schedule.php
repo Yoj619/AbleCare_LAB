@@ -1,35 +1,193 @@
 <?php
-/**
- * AbleCare - Healthcare Provider Portal
- * Therapy Schedules Page
- *
- * TODO (Database Integration):
- * - Replace the $sessions array below with actual DB queries (PDO/MySQLi).
- * - Connect session/auth to verify logged-in provider.
- * - Action handlers (view/complete/edit/cancel) should POST to API endpoints
- *   or the same page with action logic at the top.
- * - "Add Therapy Session" should INSERT into therapy_sessions table.
- */
+// ============================================================
+//  AbleCare – Healthcare Provider Portal: Therapy Schedules
+// ============================================================
+session_start();
 
-// -----------------------------------------------------------------------
-// Session data (replace with DB query when provider auth + sessions table exist)
-// -----------------------------------------------------------------------
+if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'healthcare_provider') {
+    header('Location: login.php');
+    exit;
+}
 
+require_once 'db.php';
+$db = get_db();
+
+// ── Resolve healthcare_providers.id ──────────────────────────────────────────
+$stmt = $db->prepare('SELECT hp.id, cl.name AS clinic_name
+                      FROM healthcare_providers hp
+                      LEFT JOIN clinics cl ON cl.id = hp.clinic_id
+                      WHERE hp.user_id = ? LIMIT 1');
+$stmt->bind_param('i', $_SESSION['user_id']);
+$stmt->execute();
+$hpRow = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if (!$hpRow) {
+    header('Location: provider_settings.php');
+    exit;
+}
+$hpId = (int) $hpRow['id'];
+
+// ── AJAX action handler ───────────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['ts_action'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    $tsAction = $_POST['ts_action'];
+
+    if ($tsAction === 'create') {
+        $patientId   = (int) ($_POST['patient_id'] ?? 0);
+        $therapyType = trim($_POST['therapy_type'] ?? '');
+        $sessionDate = trim($_POST['session_date'] ?? '');
+        $sessionTime = trim($_POST['session_time'] ?? '');
+        $notes       = trim($_POST['notes'] ?? '') ?: null;
+
+        if (!$patientId || $therapyType === '' || $sessionDate === '' || $sessionTime === '') {
+            echo json_encode(['ok' => false, 'error' => 'Please fill in all required fields.']);
+            exit;
+        }
+
+        // Verify patient belongs to this provider via an accepted consultation
+        $chk = $db->prepare(
+            'SELECT 1 FROM consultations
+             WHERE patient_id = ? AND healthcare_provider_id = ? AND status = "accepted" LIMIT 1'
+        );
+        $chk->bind_param('ii', $patientId, $hpId);
+        $chk->execute();
+        if (!$chk->get_result()->fetch_assoc()) {
+            echo json_encode(['ok' => false, 'error' => 'Patient not assigned to this provider.']);
+            $chk->close();
+            exit;
+        }
+        $chk->close();
+
+        $ins = $db->prepare(
+            'INSERT INTO therapy_schedules
+             (patient_id, healthcare_provider_id, therapy_type, session_date, session_time, notes)
+             VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        $ins->bind_param('iissss', $patientId, $hpId, $therapyType, $sessionDate, $sessionTime, $notes);
+        if ($ins->execute()) {
+            echo json_encode(['ok' => true, 'id' => $ins->insert_id]);
+        } else {
+            echo json_encode(['ok' => false, 'error' => 'Database error. Please try again.']);
+        }
+        $ins->close();
+        exit;
+    }
+
+    if ($tsAction === 'complete') {
+        $sessionId = (int) ($_POST['session_id'] ?? 0);
+        $notes     = trim($_POST['notes'] ?? '') ?: null;
+
+        $upd = $db->prepare(
+            "UPDATE therapy_schedules SET status = 'completed', notes = ?
+             WHERE id = ? AND healthcare_provider_id = ?"
+        );
+        $upd->bind_param('sii', $notes, $sessionId, $hpId);
+        $upd->execute();
+        echo json_encode(['ok' => true]);
+        $upd->close();
+        exit;
+    }
+
+    if ($tsAction === 'edit') {
+        $sessionId   = (int) ($_POST['session_id'] ?? 0);
+        $therapyType = trim($_POST['therapy_type'] ?? '');
+        $sessionDate = trim($_POST['session_date'] ?? '');
+        $sessionTime = trim($_POST['session_time'] ?? '');
+        $notes       = trim($_POST['notes'] ?? '') ?: null;
+
+        if (!$sessionId || $therapyType === '' || $sessionDate === '' || $sessionTime === '') {
+            echo json_encode(['ok' => false, 'error' => 'Please fill in all required fields.']);
+            exit;
+        }
+
+        $upd = $db->prepare(
+            'UPDATE therapy_schedules
+             SET therapy_type = ?, session_date = ?, session_time = ?, notes = ?
+             WHERE id = ? AND healthcare_provider_id = ?'
+        );
+        $upd->bind_param('ssssii', $therapyType, $sessionDate, $sessionTime, $notes, $sessionId, $hpId);
+        $upd->execute();
+        echo json_encode(['ok' => true]);
+        $upd->close();
+        exit;
+    }
+
+    if ($tsAction === 'cancel') {
+        $sessionId = (int) ($_POST['session_id'] ?? 0);
+
+        $upd = $db->prepare(
+            "UPDATE therapy_schedules SET status = 'cancelled'
+             WHERE id = ? AND healthcare_provider_id = ?"
+        );
+        $upd->bind_param('ii', $sessionId, $hpId);
+        $upd->execute();
+        echo json_encode(['ok' => true]);
+        $upd->close();
+        exit;
+    }
+
+    echo json_encode(['ok' => false, 'error' => 'Unknown action.']);
+    exit;
+}
+
+// ── Provider display info ─────────────────────────────────────────────────────
 $provider = [
     'name'     => $_SESSION['full_name'] ?? 'Healthcare Provider',
-    'role'     => $_SESSION['role'] ?? 'Healthcare Provider',
-    'hospital' => $_SESSION['hospital'] ?? '',
-    'avatar'   => $_SESSION['avatar'] ?? '',
+    'role'     => 'Healthcare Provider',
+    'hospital' => $hpRow['clinic_name'] ?? '',
+    'avatar'   => '',
 ];
 
-// TODO: replace with DB query (SELECT * FROM therapy_sessions WHERE provider_id = ? ORDER BY session_date DESC) when table exists
-$sessions = [];
+// ── Fetch patients assigned to this provider (accepted consultations) ─────────
+$pStmt = $db->prepare(
+    'SELECT DISTINCT p.id, p.first_name, p.last_name
+     FROM consultations con
+     JOIN patients p ON p.id = con.patient_id
+     WHERE con.healthcare_provider_id = ? AND con.status = "accepted" AND p.deleted_at IS NULL
+     ORDER BY p.first_name ASC'
+);
+$pStmt->bind_param('i', $hpId);
+$pStmt->execute();
+$assignedPatients = $pStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$pStmt->close();
+
+// ── Fetch real therapy sessions ───────────────────────────────────────────────
+$sStmt = $db->prepare(
+    'SELECT ts.id, ts.session_date, ts.session_time,
+            ts.status, ts.notes, ts.therapy_type,
+            p.first_name AS patient_first, p.last_name AS patient_last
+     FROM therapy_schedules ts
+     JOIN patients p ON p.id = ts.patient_id
+     WHERE ts.healthcare_provider_id = ?
+     ORDER BY ts.session_date DESC, ts.session_time DESC'
+);
+$sStmt->bind_param('i', $hpId);
+$sStmt->execute();
+$rawSessions = $sStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$sStmt->close();
+
+$sessions = array_map(function ($row) {
+    return [
+        'id'             => (int) $row['id'],
+        'patient_name'   => trim($row['patient_first'] . ' ' . $row['patient_last']),
+        'therapy_type'   => $row['therapy_type'] ?? '',
+        'datetime'       => date('M d, Y · g:i A', strtotime($row['session_date'] . ' ' . $row['session_time'])),
+        'date_val'       => $row['session_date'],
+        'time_val'       => substr($row['session_time'] ?? '', 0, 5),
+        'status'         => $row['status'],
+        'notes'          => $row['notes'] ?? '',
+        'progress_done'  => 0,
+        'progress_total' => 0,
+    ];
+}, $rawSessions);
 
 // Status badge config
 $statusConfig = [
-    'scheduled'  => ['label' => 'Scheduled',  'class' => 'badge-scheduled'],
-    'completed'  => ['label' => 'Completed',  'class' => 'badge-completed'],
-    'cancelled'  => ['label' => 'Cancelled',  'class' => 'badge-cancelled'],
+    'scheduled' => ['label' => 'Scheduled', 'class' => 'badge-scheduled'],
+    'completed' => ['label' => 'Completed', 'class' => 'badge-completed'],
+    'cancelled' => ['label' => 'Cancelled', 'class' => 'badge-cancelled'],
+    'missed'    => ['label' => 'Missed',    'class' => 'badge-cancelled'],
 ];
 ?>
 <!DOCTYPE html>
@@ -264,7 +422,15 @@ $statusConfig = [
             <label class="form-label">Patient <span class="req">*</span></label>
             <select class="form-control" id="addPatient">
                 <option value="" disabled selected>Select Patient</option>
-                <?php /* TODO: populate from DB query (SELECT patients assigned to this provider) when table exists */ ?>
+                <?php if (empty($assignedPatients)): ?>
+                <option disabled>No assigned patients yet</option>
+                <?php else: ?>
+                <?php foreach ($assignedPatients as $pt): ?>
+                <option value="<?= (int) $pt['id'] ?>">
+                    <?= htmlspecialchars($pt['first_name'] . ' ' . $pt['last_name']) ?>
+                </option>
+                <?php endforeach; ?>
+                <?php endif; ?>
             </select>
         </div>
         <div class="form-group">
@@ -379,11 +545,11 @@ $statusConfig = [
         <div class="form-row">
             <div class="form-group">
                 <label class="form-label">Date <span class="req">*</span></label>
-                <input type="text" class="form-control" id="editDate" placeholder="mm/dd/yy" />
+                <input type="date" class="form-control" id="editDate" />
             </div>
             <div class="form-group">
                 <label class="form-label">Time <span class="req">*</span></label>
-                <input type="text" class="form-control" id="editTime" placeholder="09:00 AM" />
+                <input type="time" class="form-control" id="editTime" />
             </div>
         </div>
         <div class="form-group">
@@ -425,76 +591,162 @@ $statusConfig = [
 <!-- JAVASCRIPT                                                       -->
 <!-- ================================================================ -->
 <script>
+    const PROVIDER_ID = <?= (int) $hpId ?>;
+
     let currentSessionId = null;
 
     const badgeClass = {
-        scheduled:  'badge-scheduled',
-        completed:  'badge-completed',
-        cancelled:  'badge-cancelled',
+        scheduled: 'badge-scheduled',
+        completed: 'badge-completed',
+        cancelled: 'badge-cancelled',
+        missed:    'badge-cancelled',
     };
     const badgeLabel = {
         scheduled: 'Scheduled',
         completed: 'Completed',
         cancelled: 'Cancelled',
+        missed:    'Missed',
     };
 
-    function openAddModal() {
-        document.getElementById('modalAdd').classList.add('open');
-    }
-    function confirmAddSession() {
-        alert('Session scheduled!\n(TODO: connect to backend)');
-        closeModal('modalAdd');
+    // ── Utility ──────────────────────────────────────────────────────────────────
+    function tsPost(data) {
+        const fd = new FormData();
+        Object.entries(data).forEach(([k, v]) => fd.append(k, v ?? ''));
+        return fetch('therapy_schedule.php', { method: 'POST', body: fd })
+            .then(r => r.json());
     }
 
+    function showModalError(modalId, msg) {
+        let el = document.getElementById(modalId + '_err');
+        if (!el) {
+            el = document.createElement('p');
+            el.id = modalId + '_err';
+            el.style.cssText = 'color:#ef5350;font-size:13px;margin:8px 0 0;';
+            document.querySelector('#' + modalId + ' .modal-actions').before(el);
+        }
+        el.textContent = msg;
+    }
+    function clearModalError(modalId) {
+        const el = document.getElementById(modalId + '_err');
+        if (el) el.textContent = '';
+    }
+
+    // ── Add Session ───────────────────────────────────────────────────────────────
+    function openAddModal() {
+        document.getElementById('addPatient').value    = '';
+        document.getElementById('addTherapyType').value = '';
+        document.getElementById('addDate').value        = '';
+        document.getElementById('addTime').value        = '';
+        document.getElementById('addNotes').value       = '';
+        clearModalError('modalAdd');
+        document.getElementById('modalAdd').classList.add('open');
+    }
+
+    function confirmAddSession() {
+        const patientId  = document.getElementById('addPatient').value;
+        const therapyType = document.getElementById('addTherapyType').value.trim();
+        const date        = document.getElementById('addDate').value;
+        const time        = document.getElementById('addTime').value;
+        const notes       = document.getElementById('addNotes').value;
+
+        if (!patientId || !therapyType || !date || !time) {
+            showModalError('modalAdd', 'Please fill in all required fields.');
+            return;
+        }
+        clearModalError('modalAdd');
+
+        tsPost({ ts_action: 'create', patient_id: patientId,
+                 therapy_type: therapyType, session_date: date, session_time: time, notes })
+            .then(r => {
+                if (r.ok) { closeModal('modalAdd'); location.reload(); }
+                else showModalError('modalAdd', r.error || 'Failed to schedule session.');
+            })
+            .catch(() => showModalError('modalAdd', 'Network error. Please try again.'));
+    }
+
+    // ── View Details ──────────────────────────────────────────────────────────────
     function openViewModal(id, patient, therapyType, datetime, done, total, status) {
         const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-        document.getElementById('viewPatient').textContent      = patient;
-        document.getElementById('viewTherapyType').textContent  = therapyType;
-        document.getElementById('viewDatetime').textContent     = datetime;
-        document.getElementById('viewProgressFill').style.width = pct + '%';
+        document.getElementById('viewPatient').textContent       = patient;
+        document.getElementById('viewTherapyType').textContent   = therapyType;
+        document.getElementById('viewDatetime').textContent      = datetime;
+        document.getElementById('viewProgressFill').style.width  = pct + '%';
         document.getElementById('viewProgressLabel').textContent = done + '/' + total;
         const badge = document.getElementById('viewStatusBadge');
-        badge.textContent  = badgeLabel[status] || status;
-        badge.className    = 'detail-status-pill status-badge ' + (badgeClass[status] || '');
+        badge.textContent = badgeLabel[status] || status;
+        badge.className   = 'detail-status-pill status-badge ' + (badgeClass[status] || '');
         document.getElementById('modalView').classList.add('open');
     }
 
+    // ── Complete ──────────────────────────────────────────────────────────────────
     function openCompleteModal(id, patient) {
         currentSessionId = id;
         document.getElementById('completePatientName').textContent = patient;
         document.getElementById('completeNotes').value = '';
+        clearModalError('modalComplete');
         document.getElementById('modalComplete').classList.add('open');
     }
+
     function confirmComplete() {
         const notes = document.getElementById('completeNotes').value;
-        alert('Session ' + currentSessionId + ' marked complete!\n(TODO: connect to backend)');
-        closeModal('modalComplete');
+        tsPost({ ts_action: 'complete', session_id: currentSessionId, notes })
+            .then(r => {
+                if (r.ok) { closeModal('modalComplete'); location.reload(); }
+                else showModalError('modalComplete', r.error || 'Failed to mark session complete.');
+            })
+            .catch(() => showModalError('modalComplete', 'Network error. Please try again.'));
     }
 
+    // ── Edit ──────────────────────────────────────────────────────────────────────
     function openEditModal(id, patient, therapyType, date, time) {
         currentSessionId = id;
-        document.getElementById('editPatient').value      = patient;
-        document.getElementById('editTherapyType').value  = therapyType;
-        document.getElementById('editDate').value          = date;
-        document.getElementById('editTime').value          = time;
-        document.getElementById('editNotes').value         = '';
+        document.getElementById('editPatient').value     = patient;
+        document.getElementById('editTherapyType').value = therapyType;
+        document.getElementById('editDate').value        = date;
+        document.getElementById('editTime').value        = time;
+        document.getElementById('editNotes').value       = '';
+        clearModalError('modalEdit');
         document.getElementById('modalEdit').classList.add('open');
     }
+
     function confirmEdit() {
-        alert('Session ' + currentSessionId + ' updated!\n(TODO: connect to backend)');
-        closeModal('modalEdit');
+        const therapyType = document.getElementById('editTherapyType').value.trim();
+        const date        = document.getElementById('editDate').value;
+        const time        = document.getElementById('editTime').value;
+        const notes       = document.getElementById('editNotes').value;
+
+        if (!therapyType || !date || !time) {
+            showModalError('modalEdit', 'Please fill in all required fields.');
+            return;
+        }
+        clearModalError('modalEdit');
+
+        tsPost({ ts_action: 'edit', session_id: currentSessionId,
+                 therapy_type: therapyType, session_date: date, session_time: time, notes })
+            .then(r => {
+                if (r.ok) { closeModal('modalEdit'); location.reload(); }
+                else showModalError('modalEdit', r.error || 'Failed to update session.');
+            })
+            .catch(() => showModalError('modalEdit', 'Network error. Please try again.'));
     }
 
+    // ── Cancel ────────────────────────────────────────────────────────────────────
     function openCancelModal(id, patient) {
         currentSessionId = id;
         document.getElementById('cancelPatientName').textContent = patient;
         document.getElementById('modalCancel').classList.add('open');
     }
+
     function confirmCancel() {
-        alert('Session ' + currentSessionId + ' cancelled!\n(TODO: connect to backend)');
-        closeModal('modalCancel');
+        tsPost({ ts_action: 'cancel', session_id: currentSessionId })
+            .then(r => {
+                if (r.ok) { closeModal('modalCancel'); location.reload(); }
+                else alert('Error: ' + (r.error || 'Failed to cancel session.'));
+            })
+            .catch(() => alert('Network error. Please try again.'));
     }
 
+    // ── Modal close helpers ───────────────────────────────────────────────────────
     function closeModal(id) {
         document.getElementById(id).classList.remove('open');
     }
@@ -503,6 +755,12 @@ $statusConfig = [
         overlay.addEventListener('click', function(e) {
             if (e.target === this) closeModal(this.id);
         });
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            ['modalAdd','modalView','modalComplete','modalEdit','modalCancel'].forEach(closeModal);
+        }
     });
 </script>
 </body>

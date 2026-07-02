@@ -46,22 +46,33 @@ $pending_result = $db->query(
         u.id,
         CONCAT(u.first_name, ' ', u.last_name) AS full_name,
         u.email,
+        u.phone_number,
         u.created_at AS date_applied,
+        hp.specialization,
         hp.license_number,
         hp.prc_id_path,
-        c.name  AS clinic_name,
+        c.name               AS clinic_name,
         c.address,
         c.barangay,
+        c.contact_number     AS clinic_contact,
+        c.operating_hours,
+        c.accepts_walk_ins,
+        c.has_wheelchair_access,
+        c.has_ground_floor_access,
         GROUP_CONCAT(
             DISTINCT CONCAT(cs.disability_category, ': ', cs.specific_condition)
             ORDER BY cs.id SEPARATOR '; '
-        ) AS specializations
+        ) AS conditions_served
     FROM users u
     JOIN  healthcare_providers hp ON hp.user_id  = u.id
     LEFT JOIN clinics c               ON c.id       = hp.clinic_id
     LEFT JOIN clinic_specializations cs ON cs.clinic_id = c.id
     WHERE u.role = 'healthcare_provider' AND u.status = 'pending'
-    GROUP BY u.id, hp.license_number, hp.prc_id_path, c.name, c.address, c.barangay
+    GROUP BY u.id, u.phone_number,
+             hp.specialization, hp.license_number, hp.prc_id_path,
+             c.name, c.address, c.barangay, c.contact_number,
+             c.operating_hours, c.accepts_walk_ins,
+             c.has_wheelchair_access, c.has_ground_floor_access
     ORDER BY u.created_at DESC"
 );
 $pending_requests = $pending_result ? $pending_result->fetch_all(MYSQLI_ASSOC) : [];
@@ -179,6 +190,80 @@ function formatRole(string $role): string {
 <title>AbleCare – LGU Health Office Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/admin_dashboard.css">
+<style>
+/* ── View Button ─────────────────────────────────────── */
+.btn-view { background: var(--teal-xlight); }
+.btn-view:hover { background: var(--teal-light); }
+.btn-view svg { fill: var(--teal-dark); }
+
+/* ── Registration Detail Modal ───────────────────────── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.48);
+  align-items: center; justify-content: center; padding: 20px;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--white); border-radius: var(--radius);
+  width: 100%; max-width: 660px; max-height: 88vh;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-lg); overflow: hidden;
+  animation: modal-in .18s ease;
+}
+@keyframes modal-in { from { opacity:0; transform:scale(.96) } to { opacity:1; transform:scale(1) } }
+.modal-hdr {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; padding: 22px 28px 18px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modal-hdr-left { flex: 1; min-width: 0; }
+.modal-title { font-size: 18px; font-weight: 700; color: var(--text-dark); margin: 0 0 3px; }
+.modal-subtitle { font-size: 13px; color: var(--text-muted); margin: 0; }
+.modal-close-btn {
+  width: 32px; height: 32px; border-radius: 8px; border: none;
+  background: var(--teal-xlight); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: background .15s;
+}
+.modal-close-btn:hover { background: var(--teal-light); }
+.modal-close-btn svg { width: 18px; height: 18px; fill: var(--text-mid); }
+.modal-body {
+  flex: 1; overflow-y: auto; padding: 22px 28px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.modal-section { display: flex; flex-direction: column; gap: 10px; }
+.modal-section-title {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .07em;
+  color: var(--teal); text-transform: uppercase;
+}
+.modal-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+.modal-field-full { grid-column: 1 / -1; }
+.modal-label {
+  font-size: 10.5px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px;
+}
+.modal-value { font-size: 13.5px; color: var(--text-dark); font-weight: 500; word-break: break-word; }
+.modal-value.empty { color: var(--text-muted); font-style: italic; font-weight: 400; }
+.modal-badge {
+  display: inline-block; padding: 2px 9px; border-radius: 4px;
+  font-size: 12px; font-weight: 600;
+}
+.badge-yes { background: #e6f9f0; color: #1a7a45; }
+.badge-no  { background: var(--teal-xlight); color: var(--text-muted); }
+.badge-uploaded { background: var(--teal-xlight); color: var(--teal-dark); }
+.modal-hr { height: 1px; background: var(--border); }
+.modal-footer {
+  padding: 14px 28px; border-top: 1px solid var(--border);
+  display: flex; justify-content: flex-end; flex-shrink: 0;
+}
+.btn-modal-close {
+  padding: 8px 22px; border-radius: var(--radius-sm);
+  font-family: var(--font); font-size: 13px; font-weight: 600;
+  cursor: pointer; border: 1.5px solid var(--border);
+  background: var(--white); color: var(--text-mid); transition: background .15s;
+}
+.btn-modal-close:hover { background: var(--bg); }
+</style>
 </head>
 <body>
 
@@ -409,6 +494,10 @@ function formatRole(string $role): string {
                 <td><?= htmlspecialchars(isset($req['date_applied']) ? date('M j, Y', strtotime($req['date_applied'])) : '') ?></td>
                 <td>
                   <div class="action-btns">
+                    <button type="button" class="btn-icon btn-view" title="View Details"
+                      onclick="openReqModal(<?= (int)($req['id'] ?? 0) ?>)">
+                      <svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                    </button>
                     <button type="submit" name="action" value="approve"
                       class="btn-icon btn-approve" title="Approve"
                       onclick="this.form.user_id.value='<?= (int)($req['id'] ?? 0) ?>';return confirm('Approve this registration?')">
@@ -431,9 +520,9 @@ function formatRole(string $role): string {
 
       <!-- Bottom Action Buttons -->
       <div class="bottom-actions">
-        <button class="action-btn btn-primary" onclick="window.location='user_management.php?filter=pending'">
-          <svg viewBox="0 0 24 24" fill="#fff"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
-          Approve Pending Users
+        <button class="action-btn btn-primary" onclick="window.location='user_management.php'">
+          <svg viewBox="0 0 24 24" fill="#fff"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+          Manage Approved Users
         </button>
         <button class="action-btn btn-secondary" onclick="window.location='emergency_monitor.php'">
           <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
@@ -448,6 +537,143 @@ function formatRole(string $role): string {
 
   </div><!-- /content -->
 </div><!-- /main -->
+
+<!-- ══ REGISTRATION DETAIL MODAL ══ -->
+<div id="req-modal" class="modal-overlay" onclick="if(event.target===this)closeReqModal()">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <div class="modal-hdr-left">
+        <h2 class="modal-title" id="modal-name"></h2>
+        <p class="modal-subtitle" id="modal-email"></p>
+      </div>
+      <button class="modal-close-btn" onclick="closeReqModal()" title="Close">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn-modal-close" onclick="closeReqModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── Pending request data (keyed by user id) ── */
+const REQ_DATA = {};
+<?php foreach ($pending_requests as $req): ?>
+REQ_DATA[<?= (int)$req['id'] ?>] = <?= json_encode($req, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+<?php endforeach; ?>
+
+function esc(v) {
+  return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function val(v, fallback) {
+  return (v !== null && v !== undefined && v !== '') ? v : (fallback ?? null);
+}
+function fieldHTML(label, value, full) {
+  const empty = (value === null || value === undefined || value === '');
+  const cls = full ? 'modal-field-full' : '';
+  return `<div class="${cls}">
+    <div class="modal-label">${esc(label)}</div>
+    <div class="modal-value${empty ? ' empty' : ''}">${empty ? 'Not provided' : esc(value)}</div>
+  </div>`;
+}
+function badgeField(label, flag, yesText, noText, full) {
+  const isYes = (flag == 1 || flag === '1' || flag === true);
+  const cls = full ? 'modal-field-full' : '';
+  return `<div class="${cls}">
+    <div class="modal-label">${esc(label)}</div>
+    <div class="modal-value"><span class="modal-badge ${isYes ? 'badge-yes' : 'badge-no'}">${isYes ? (yesText||'Yes') : (noText||'No')}</span></div>
+  </div>`;
+}
+
+function openReqModal(userId) {
+  const r = REQ_DATA[userId];
+  if (!r) return;
+
+  const fullAddress = [r.address, r.barangay].filter(Boolean).join(', Brgy. ');
+  const dateApplied = r.date_applied
+    ? new Date(r.date_applied).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'})
+    : null;
+
+  document.getElementById('modal-name').textContent  = r.full_name  || '—';
+  document.getElementById('modal-email').textContent = r.email || '';
+
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-section">
+      <div class="modal-section-title">Personal Information</div>
+      <div class="modal-fields">
+        ${fieldHTML('Full Name',     r.full_name,    false)}
+        ${fieldHTML('Phone Number',  r.phone_number, false)}
+        ${fieldHTML('Email Address', r.email,        false)}
+        ${fieldHTML('Date Applied',  dateApplied,    false)}
+      </div>
+    </div>
+
+    <div class="modal-hr"></div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Credentials</div>
+      <div class="modal-fields">
+        ${fieldHTML('License Number', r.license_number, false)}
+        <div>
+          <div class="modal-label">PRC ID / Documents</div>
+          <div class="modal-value">
+            ${r.prc_id_path
+              ? '<span class="modal-badge badge-uploaded">Uploaded</span>'
+              : '<span class="modal-value empty">Not provided</span>'}
+          </div>
+        </div>
+        ${fieldHTML('Specialization', r.specialization, true)}
+      </div>
+    </div>
+
+    <div class="modal-hr"></div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Clinic / Practice</div>
+      <div class="modal-fields">
+        ${fieldHTML('Clinic Name',     r.clinic_name,    false)}
+        ${fieldHTML('Contact Number',  r.clinic_contact, false)}
+        ${fieldHTML('Address',         fullAddress || null, true)}
+        ${fieldHTML('Operating Hours', r.operating_hours, true)}
+      </div>
+    </div>
+
+    <div class="modal-hr"></div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Services &amp; Conditions Served</div>
+      <div class="modal-fields">
+        ${fieldHTML('Conditions Served', r.conditions_served, true)}
+      </div>
+    </div>
+
+    <div class="modal-hr"></div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Accessibility Features</div>
+      <div class="modal-fields">
+        ${badgeField('Accepts Walk-ins',    r.accepts_walk_ins,         'Yes','No', false)}
+        ${badgeField('Wheelchair Access',   r.has_wheelchair_access,    'Yes','No', false)}
+        ${badgeField('Ground Floor Access', r.has_ground_floor_access,  'Yes','No', false)}
+      </div>
+    </div>
+  `;
+
+  document.getElementById('req-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeReqModal() {
+  document.getElementById('req-modal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeReqModal();
+});
+</script>
 
 </body>
 </html>

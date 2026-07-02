@@ -21,6 +21,7 @@ import { useActivePatient } from '../../hooks/useActivePatient';
 import { useAuth } from '../../context/AuthContext';
 import { listSessions, type TherapySession } from '../../services/therapy';
 import { getInbox } from '../../services/messages';
+import { getConsultationStatus, type ConsultationStatus } from '../../services/consultations';
 import { Colors, Spacing, Typography, Radius } from '../../constants/theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -79,6 +80,7 @@ export default function DashboardScreen() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [providerConsult, setProviderConsult] = useState<ConsultationStatus | null | undefined>(undefined);
 
   useEffect(() => {
     if (!patient) { setSessionsLoading(false); return; }
@@ -103,11 +105,22 @@ export default function DashboardScreen() {
     return () => { isMounted = false; };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      const result = await getConsultationStatus();
+      if (!isMounted) return;
+      setProviderConsult(result.ok ? result.data : null);
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
   const handleRefresh = useCallback(async (): Promise<void> => {
     setRefreshing(true);
     patientRefresh();
-    const result = await getInbox();
-    if (result.ok) setUnreadCount(result.data.reduce((s, c) => s + c.unreadCount, 0));
+    const [inboxResult, consultResult] = await Promise.all([getInbox(), getConsultationStatus()]);
+    if (inboxResult.ok) setUnreadCount(inboxResult.data.reduce((s, c) => s + c.unreadCount, 0));
+    if (consultResult.ok) setProviderConsult(consultResult.data);
     setRefreshing(false);
   }, [patientRefresh]);
 
@@ -232,6 +245,22 @@ export default function DashboardScreen() {
           )}
         </Card>
 
+        {/* Healthcare Provider Card */}
+        <ProviderCard
+          consult={providerConsult}
+          onView={() => {
+            if (providerConsult) {
+              navigation.navigate('ConsultationStatus', {
+                providerId:   providerConsult.id,
+                providerName: providerConsult.providerName,
+                clinicName:   providerConsult.clinicName,
+              });
+            } else {
+              navigation.navigate('RecommendedClinics');
+            }
+          }}
+        />
+
         {/* Quick Actions */}
         <Text style={styles.quickTitle}>Quick Actions</Text>
         <Card style={styles.sectionCard} padding={0}>
@@ -267,6 +296,101 @@ export default function DashboardScreen() {
         onLogout={() => { setDrawerOpen(false); navigation.navigate('Logout'); }}
       />
     </SafeAreaView>
+  );
+}
+
+const PROVIDER_STATUS_CONFIG = {
+  pending: {
+    label: 'Pending Approval',
+    icon: 'time-outline' as const,
+    color: Colors.orange,
+    bg: Colors.orangeLight,
+  },
+  accepted: {
+    label: 'Approved',
+    icon: 'checkmark-circle-outline' as const,
+    color: Colors.primary,
+    bg: Colors.primaryLight,
+  },
+  completed: {
+    label: 'Completed',
+    icon: 'ribbon-outline' as const,
+    color: Colors.primary,
+    bg: Colors.primaryLight,
+  },
+  declined: {
+    label: 'Declined',
+    icon: 'close-circle-outline' as const,
+    color: Colors.danger,
+    bg: Colors.dangerLight,
+  },
+};
+
+function ProviderCard({
+  consult,
+  onView,
+}: {
+  consult: ConsultationStatus | null | undefined;
+  onView: () => void;
+}) {
+  const isLoading = consult === undefined;
+
+  return (
+    <Card style={styles.sectionCard}>
+      <View style={styles.sectionHeader}>
+        <Ionicons name="medkit-outline" size={18} color={Colors.dark} />
+        <Text style={styles.sectionTitle}>Healthcare Provider</Text>
+      </View>
+
+      {isLoading ? (
+        <Text style={styles.overviewLabel}>Loading…</Text>
+      ) : consult === null ? (
+        /* No consultation yet */
+        <TouchableOpacity onPress={onView} activeOpacity={0.75} style={styles.providerNoAssign}>
+          <Text style={styles.providerNoAssignText}>No provider assigned yet.</Text>
+          <View style={styles.providerFindBtn}>
+            <Text style={styles.providerFindBtnText}>Find a Clinic</Text>
+            <Ionicons name="chevron-forward" size={14} color={Colors.primary} />
+          </View>
+        </TouchableOpacity>
+      ) : (
+        /* Has a consultation */
+        <TouchableOpacity onPress={onView} activeOpacity={0.75}>
+          {(() => {
+            const cfg = PROVIDER_STATUS_CONFIG[consult.status] ?? PROVIDER_STATUS_CONFIG.pending;
+            return (
+              <>
+                <View style={styles.providerNameRow}>
+                  <Text style={styles.providerName}>{consult.providerName}</Text>
+                  <View style={[styles.providerBadge, { backgroundColor: cfg.bg }]}>
+                    <Ionicons name={cfg.icon} size={12} color={cfg.color} />
+                    <Text style={[styles.providerBadgeText, { color: cfg.color }]}>{cfg.label}</Text>
+                  </View>
+                </View>
+                {consult.clinicName ? (
+                  <View style={styles.providerInfoRow}>
+                    <Ionicons name="business-outline" size={13} color={Colors.textSecondary} />
+                    <Text style={styles.providerInfoText}>{consult.clinicName}</Text>
+                  </View>
+                ) : null}
+                {consult.status === 'pending' && (
+                  <Text style={styles.providerPendingNote}>
+                    Awaiting review by the healthcare provider.
+                  </Text>
+                )}
+                {consult.status === 'declined' && consult.notes ? (
+                  <Text style={styles.providerDeclinedNote}>Note: {consult.notes}</Text>
+                ) : null}
+                <View style={styles.providerViewRow}>
+                  <Text style={styles.providerViewLink}>View Status</Text>
+                  <Ionicons name="chevron-forward" size={14} color={Colors.primary} />
+                </View>
+              </>
+            );
+          })()}
+        </TouchableOpacity>
+      )}
+    </Card>
   );
 }
 
@@ -377,4 +501,20 @@ const styles = StyleSheet.create({
     minWidth: 22, height: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6,
   },
   qaBadgeText: { color: Colors.white, fontSize: Typography.size.xs, fontWeight: Typography.weight.bold },
+
+  // ── Provider card ────────────────────────────────────────────────────────
+  providerNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm, marginBottom: 6 },
+  providerName: { flex: 1, fontSize: Typography.size.md, fontWeight: Typography.weight.semiBold, color: Colors.dark },
+  providerBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.full },
+  providerBadgeText: { fontSize: Typography.size.xs, fontWeight: Typography.weight.bold },
+  providerInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 },
+  providerInfoText: { fontSize: Typography.size.sm, color: Colors.textSecondary },
+  providerPendingNote: { fontSize: Typography.size.xs, color: Colors.orange, marginTop: 2, marginBottom: 4 },
+  providerDeclinedNote: { fontSize: Typography.size.xs, color: Colors.danger, marginTop: 2, marginBottom: 4 },
+  providerViewRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 6 },
+  providerViewLink: { fontSize: Typography.size.sm, color: Colors.primary, fontWeight: Typography.weight.medium },
+  providerNoAssign: { gap: Spacing.xs },
+  providerNoAssignText: { fontSize: Typography.size.sm, color: Colors.textSecondary },
+  providerFindBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  providerFindBtnText: { fontSize: Typography.size.sm, color: Colors.primary, fontWeight: Typography.weight.medium },
 });

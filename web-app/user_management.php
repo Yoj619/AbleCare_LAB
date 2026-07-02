@@ -75,18 +75,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_provider'])) {
     exit;
 }
 
-// ── Get all users (except current admin) ──
-$users_query = $db->query("
-    SELECT id, first_name, last_name, email, role, created_at
-    FROM users
-    WHERE id != {$_SESSION['user_id']}
-    ORDER BY created_at DESC
+// ── Get all approved users with role-specific detail via LEFT JOINs ──
+$users_result = $db->query("
+    SELECT
+        u.id, u.role, u.first_name, u.last_name, u.email, u.phone_number,
+        u.status, u.created_at,
+        cg.address    AS cg_address,  cg.barangay AS cg_barangay,
+        cg.latitude   AS cg_lat,      cg.longitude AS cg_lng,
+        GROUP_CONCAT(DISTINCT CONCAT(p.first_name, ' ', p.last_name)
+                     ORDER BY p.created_at SEPARATOR ', ')   AS patients_list,
+        GROUP_CONCAT(DISTINCT p.specific_condition
+                     ORDER BY p.created_at SEPARATOR '; ')   AS patient_conditions,
+        hp.specialization, hp.license_number, hp.prc_id_path,
+        c.name           AS clinic_name,    c.address AS clinic_address,
+        c.barangay       AS clinic_barangay, c.contact_number AS clinic_contact,
+        c.operating_hours,
+        c.accepts_walk_ins, c.has_wheelchair_access, c.has_ground_floor_access
+    FROM users u
+    LEFT JOIN caregivers cg        ON cg.user_id  = u.id
+    LEFT JOIN patients   p         ON p.caregiver_id = cg.id AND p.deleted_at IS NULL
+    LEFT JOIN healthcare_providers hp ON hp.user_id = u.id
+    LEFT JOIN clinics    c         ON c.id = hp.clinic_id
+    WHERE u.id != {$_SESSION['user_id']} AND u.status = 'approved'
+    GROUP BY u.id
+    ORDER BY u.created_at DESC
 ");
+$all_users = $users_result ? $users_result->fetch_all(MYSQLI_ASSOC) : [];
 
-// ── Statistics ──
-$total_users     = $db->query("SELECT COUNT(*) AS total FROM users")->fetch_assoc()['total'];
-$total_admins    = $db->query("SELECT COUNT(*) AS total FROM users WHERE role = 'admin'")->fetch_assoc()['total'];
-$total_providers = $db->query("SELECT COUNT(*) AS total FROM users WHERE role = 'healthcare_provider'")->fetch_assoc()['total'];
+// ── Statistics (approved accounts only) ──
+$total_users      = $db->query("SELECT COUNT(*) AS total FROM users WHERE status = 'approved'")->fetch_assoc()['total'];
+$total_admins     = $db->query("SELECT COUNT(*) AS total FROM users WHERE role = 'admin'                AND status = 'approved'")->fetch_assoc()['total'];
+$total_providers  = $db->query("SELECT COUNT(*) AS total FROM users WHERE role = 'healthcare_provider' AND status = 'approved'")->fetch_assoc()['total'];
+$total_caregivers = $db->query("SELECT COUNT(*) AS total FROM users WHERE role = 'caregiver'           AND status = 'approved'")->fetch_assoc()['total'];
 
 // ── Greeting ──
 $hour     = (int) date('G');
@@ -155,13 +175,44 @@ function formatRole(string $role): string {
 <title>AbleCare – User Management</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/user_management.css">
+<style>
+/* ── View button (table) ─────────────────────────────────────────────────── */
+.btn-view-detail {
+  background: #eaf6f5; color: #2a7c7c;
+  border: 1.5px solid #b2d8d6;
+  border-radius: 6px; padding: 4px 10px;
+  font-size: 12px; font-weight: 600; font-family: inherit;
+  cursor: pointer; transition: background .15s;
+  vertical-align: middle;
+}
+.btn-view-detail:hover { background: #d2eeec; }
+
+/* ── User-detail modal content ───────────────────────────────────────────── */
+.ud-section       { display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px; }
+.ud-section-title {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .7px;
+  text-transform: uppercase; color: #3aafa9; margin-bottom: 2px;
+}
+.ud-fields        { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+.ud-label         { font-size: 11px; color: #9db8b8; font-weight: 600;
+                    text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
+.ud-value         { font-size: 13px; color: #1c3030; font-weight: 500; line-height: 1.45; }
+.ud-hr            { height: 1px; background: #dde8e7; margin: 4px 0; }
+.ud-badge         { display: inline-block; padding: 2px 10px; border-radius: 20px;
+                    font-size: 11px; font-weight: 700; }
+.ud-badge-yes     { background: #d1f0ee; color: #1a6b66; }
+.ud-badge-no      { background: #f3f4f6; color: #9db8b8; }
+.ud-badge-uploaded { background: #dbeafe; color: #1e40af; }
+.ud-coords        { font-family: 'DM Mono','Courier New',monospace; font-size: 11.5px;
+                    color: #3aafa9; }
+</style>
 </head>
 <body>
 
 <!-- ══ SIDEBAR ══ -->
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img src="image/ablecarelogo.png" alt="AbleCare Logo" style="width:50px;height:auto;">
+    <img src="image/ablecarelogo.png" alt="AbleCare Logo" style="width:56px;height:56px;object-fit:contain;">
     <div>
       <div class="brand-name">AbleCare</div>
       <div class="brand-sub">LGU Admin Portal</div>
@@ -248,6 +299,10 @@ function formatRole(string $role): string {
           <div class="gbadge-label">Providers</div>
           <div class="gbadge-val"><?= number_format($total_providers) ?></div>
         </div>
+        <div class="gbadge">
+          <div class="gbadge-label">Caregivers</div>
+          <div class="gbadge-val"><?= number_format($total_caregivers) ?></div>
+        </div>
       </div>
     </div>
 
@@ -271,7 +326,7 @@ function formatRole(string $role): string {
         </div>
       </div>
 
-      <?php if ($users_query && $users_query->num_rows > 0): ?>
+      <?php if (!empty($all_users)): ?>
       <div style="overflow-x: auto;">
         <table>
           <thead>
@@ -284,13 +339,16 @@ function formatRole(string $role): string {
             </tr>
           </thead>
           <tbody>
-            <?php while ($user = $users_query->fetch_assoc()):
+            <?php foreach ($all_users as $user):
               $display_role = $user['role'] === 'admin' ? 'lgu_admin' : $user['role'];
             ?>
             <tr>
               <td><strong><?= htmlspecialchars(trim($user['first_name'] . ' ' . $user['last_name'])) ?></strong></td>
               <td><?= htmlspecialchars($user['email']) ?></td>
               <td>
+                <?php if ($user['role'] === 'caregiver'): ?>
+                  <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:0.78rem;font-weight:600;background:var(--teal-light,#e6f4f3);color:var(--teal,#2a7c7c);">Caregiver</span>
+                <?php else: ?>
                 <form method="POST" style="display: inline-flex; gap: 5px; align-items: center;">
                   <input type="hidden" name="user_id" value="<?= $user['id'] ?>">
                   <select name="new_role" onchange="confirmRoleChange(event, this)">
@@ -299,16 +357,22 @@ function formatRole(string $role): string {
                   </select>
                   <input type="hidden" name="update_role" value="1">
                 </form>
+                <?php endif; ?>
               </td>
               <td><?= date('M d, Y', strtotime($user['created_at'])) ?></td>
-              <td>
+              <td style="white-space:nowrap;display:flex;gap:6px;align-items:center;">
+                <button type="button" class="btn-view-detail"
+                        onclick="openUserModal(<?= (int)$user['id'] ?>)"
+                        title="View full details">
+                  <svg viewBox="0 0 24 24" style="width:12px;height:12px;fill:currentColor;vertical-align:middle;margin-right:3px;margin-top:-1px;"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>View
+                </button>
                 <form method="POST" onsubmit="return confirm('Delete this user? This cannot be undone.')" style="display: inline;">
                   <input type="hidden" name="delete_id" value="<?= $user['id'] ?>">
                   <button type="submit" class="btn-delete">Delete</button>
                 </form>
               </td>
             </tr>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
           </tbody>
         </table>
       </div>
@@ -322,6 +386,28 @@ function formatRole(string $role): string {
 
   </div><!-- /content -->
 </div><!-- /main -->
+
+
+<!-- ══════════════════════════════════════════
+     MODAL: USER DETAILS
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="userDetailModal">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="udTitle">User Details</div>
+        <div class="modal-subtitle" id="udSubtitle"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('userDetailModal')" aria-label="Close">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="udBody" style="padding:20px 22px;max-height:68vh;overflow-y:auto;"></div>
+    <div class="modal-footer">
+      <button type="button" class="btn-cancel" onclick="closeModal('userDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
 
 
 <!-- ══════════════════════════════════════════
@@ -420,6 +506,139 @@ function formatRole(string $role): string {
 
 
 <script>
+// ── User detail data (PHP → JS) ─────────────────────────────────────────────
+var USER_DATA = <?= json_encode(
+  array_column($all_users, null, 'id'),
+  JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+) ?>;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function udEsc(str) {
+  var d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function udRoleLabel(role) {
+  if (role === 'admin')                return 'LGU Health Administrator';
+  if (role === 'healthcare_provider')  return 'Healthcare Provider';
+  if (role === 'caregiver')            return 'Caregiver';
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function udFormatDate(dt) {
+  if (!dt) return '—';
+  var d = new Date(dt);
+  return d.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' });
+}
+
+function udField(label, val, full) {
+  var v = (val !== null && val !== undefined && String(val).trim() !== '')
+    ? udEsc(String(val))
+    : '<span style="color:#9db8b8">—</span>';
+  return '<div style="' + (full ? 'grid-column:1/-1;' : '') + '">' +
+    '<div class="ud-label">' + udEsc(label) + '</div>' +
+    '<div class="ud-value">' + v + '</div>' +
+    '</div>';
+}
+
+function udBadge(label, flag, full) {
+  var yes = parseInt(flag, 10) === 1 || flag === true || flag === '1';
+  var badge = yes
+    ? '<span class="ud-badge ud-badge-yes">Yes</span>'
+    : '<span class="ud-badge ud-badge-no">No</span>';
+  return '<div style="' + (full ? 'grid-column:1/-1;' : '') + '">' +
+    '<div class="ud-label">' + udEsc(label) + '</div>' +
+    '<div class="ud-value">' + badge + '</div>' +
+    '</div>';
+}
+
+function udSection(title, fieldsHtml) {
+  return '<div class="ud-section">' +
+    '<div class="ud-section-title">' + udEsc(title) + '</div>' +
+    '<div class="ud-fields">' + fieldsHtml + '</div>' +
+    '</div>';
+}
+
+function openUserModal(id) {
+  var u = USER_DATA[id];
+  if (!u) return;
+
+  var fullName = (u.first_name + ' ' + u.last_name).trim();
+  document.getElementById('udTitle').textContent    = fullName;
+  document.getElementById('udSubtitle').textContent =
+    udRoleLabel(u.role) + ' · Registered ' + udFormatDate(u.created_at);
+
+  var html = '';
+
+  // ── Account Info (all roles) ──
+  html += udSection('Account Information',
+    udField('Full Name',       fullName,               false) +
+    udField('Email Address',   u.email,                false) +
+    udField('Phone Number',    u.phone_number,         false) +
+    udField('Role',            udRoleLabel(u.role),    false) +
+    udField('Date Registered', udFormatDate(u.created_at), false)
+  );
+
+  // ── Caregiver sections ──
+  if (u.role === 'caregiver') {
+    html += '<div class="ud-hr"></div>';
+    var coords = (u.cg_lat && u.cg_lng)
+      ? '<span class="ud-coords">' + parseFloat(u.cg_lat).toFixed(6) + ', ' + parseFloat(u.cg_lng).toFixed(6) + '</span>'
+      : null;
+    html += '<div class="ud-section"><div class="ud-section-title">Address</div><div class="ud-fields">' +
+      udField('Street / Address', u.cg_address,  true) +
+      udField('Barangay',         u.cg_barangay, false) +
+      (coords
+        ? '<div><div class="ud-label">GPS Coordinates</div><div class="ud-value">' + coords + '</div></div>'
+        : udField('GPS Coordinates', null, false)) +
+    '</div></div>';
+
+    if (u.patients_list) {
+      html += '<div class="ud-hr"></div>';
+      html += udSection('Linked Patient(s)',
+        udField('Patient Name(s)', u.patients_list,       true) +
+        udField('Conditions',      u.patient_conditions,  true)
+      );
+    }
+  }
+
+  // ── Healthcare Provider sections ──
+  if (u.role === 'healthcare_provider') {
+    var prcBadge = u.prc_id_path
+      ? '<span class="ud-badge ud-badge-uploaded">Uploaded</span>'
+      : '<span class="ud-badge ud-badge-no">Not uploaded</span>';
+
+    html += '<div class="ud-hr"></div>';
+    html += '<div class="ud-section"><div class="ud-section-title">Professional Credentials</div><div class="ud-fields">' +
+      udField('Specialization',  u.specialization,  false) +
+      udField('License Number',  u.license_number,  false) +
+      '<div><div class="ud-label">PRC ID</div><div class="ud-value">' + prcBadge + '</div></div>' +
+    '</div></div>';
+
+    if (u.clinic_name) {
+      var clinicAddr = [u.clinic_address, u.clinic_barangay ? 'Brgy. ' + u.clinic_barangay : null]
+                         .filter(Boolean).join(', ');
+      html += '<div class="ud-hr"></div>';
+      html += udSection('Clinic / Practice',
+        udField('Clinic Name',      u.clinic_name,    false) +
+        udField('Contact Number',   u.clinic_contact, false) +
+        udField('Address',          clinicAddr || null, true) +
+        udField('Operating Hours',  u.operating_hours, true)
+      );
+      html += '<div class="ud-hr"></div>';
+      html += udSection('Accessibility Features',
+        udBadge('Accepts Walk-ins',    u.accepts_walk_ins,        false) +
+        udBadge('Wheelchair Access',   u.has_wheelchair_access,   false) +
+        udBadge('Ground Floor Access', u.has_ground_floor_access, false)
+      );
+    }
+  }
+
+  document.getElementById('udBody').innerHTML = html;
+  openModal('userDetailModal');
+}
+
   // ── Role change confirmation ────────────
   function confirmRoleChange(e, select) {
     const newRole = select.options[select.selectedIndex].text;

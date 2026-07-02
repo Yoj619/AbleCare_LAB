@@ -46,6 +46,10 @@ export const ENDPOINTS = {
   // Clinics
   recommendClinics: `${API_BASE_URL}/clinics/recommend.php`,
 
+  // Consultations
+  createConsultation:    `${API_BASE_URL}/consultations/request.php`,
+  consultationStatus:    `${API_BASE_URL}/consultations/status.php`,
+
   // Messages
   sendMessage:      `${API_BASE_URL}/messages/send.php`,
   getConversation:  `${API_BASE_URL}/messages/list.php`,
