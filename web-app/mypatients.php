@@ -1,20 +1,87 @@
 <?php
-/**
- * AbleCare - Healthcare Provider Portal
- * My Patients Page
- */
+// ============================================================
+//  AbleCare – Healthcare Provider: My Patients
+// ============================================================
+session_start();
+
+if (empty($_SESSION['user_id']) || $_SESSION['role'] !== 'healthcare_provider') {
+    header('Location: login.php');
+    exit;
+}
+
+require_once 'db.php';
+$db = get_db();
+
+// ── Resolve provider ID ───────────────────────────────────────────────────────
+$stmt = $db->prepare('SELECT hp.id, cl.name AS clinic_name
+                      FROM healthcare_providers hp
+                      LEFT JOIN clinics cl ON cl.id = hp.clinic_id
+                      WHERE hp.user_id = ? LIMIT 1');
+$stmt->bind_param('i', $_SESSION['user_id']);
+$stmt->execute();
+$hpRow = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if (!$hpRow) { header('Location: provider_settings.php'); exit; }
+$hpId = (int) $hpRow['id'];
+
+// ── Load patients from accepted consultations ─────────────────────────────────
+$result = $db->query("
+    SELECT
+        p.id,
+        p.first_name, p.last_name,
+        p.date_of_birth, p.specific_condition,
+        p.disability_category, p.medical_history,
+        uc.first_name AS cg_first, uc.last_name AS cg_last,
+        c.updated_at AS accepted_at
+    FROM consultations c
+    JOIN patients   p  ON p.id  = c.patient_id  AND p.deleted_at IS NULL
+    JOIN caregivers cg ON cg.id = c.caregiver_id
+    JOIN users      uc ON uc.id = cg.user_id
+    WHERE c.healthcare_provider_id = $hpId
+      AND c.status = 'accepted'
+    ORDER BY c.updated_at DESC
+");
+
+$patients = [];
+while ($row = ($result ? $result->fetch_assoc() : null)) {
+    // Compute age from date_of_birth (YYYY-MM-DD)
+    $age = 0;
+    if ($row['date_of_birth']) {
+        $dob = new DateTime($row['date_of_birth']);
+        $age = (int) $dob->diff(new DateTime())->y;
+    }
+
+    // Readable disability type for filter
+    $disabilityMap = [
+        'physical'       => 'Physical',
+        'cognitive'      => 'Cognitive',
+        'sensory_visual' => 'Sensory (Visual)',
+        'sensory_hearing'=> 'Sensory (Hearing)',
+    ];
+    $disabilityType = $disabilityMap[$row['disability_category']] ?? ucfirst(str_replace('_', ' ', $row['disability_category'] ?? ''));
+
+    $patients[] = [
+        'id'              => (int) $row['id'],
+        'name'            => $row['first_name'] . ' ' . $row['last_name'],
+        'age'             => $age,
+        'condition'       => $row['specific_condition'] ?: $disabilityType,
+        'caregiver'       => $row['cg_first'] . ' ' . $row['cg_last'],
+        'last_visit'      => date('M d, Y', strtotime($row['accepted_at'])),
+        'status'          => 'Active',
+        'disability_type' => $disabilityType,
+        'avatar'          => '',
+    ];
+}
+
+$totalPatients = count($patients);
 
 $provider = [
     'name'     => $_SESSION['full_name'] ?? 'Healthcare Provider',
-    'role'     => $_SESSION['role'] ?? 'Healthcare Provider',
-    'hospital' => $_SESSION['hospital'] ?? '',
-    'avatar'   => $_SESSION['avatar'] ?? '',
+    'role'     => 'Healthcare Provider',
+    'hospital' => $hpRow['clinic_name'] ?? '',
+    'avatar'   => '',
 ];
-
-// TODO: replace with DB query (SELECT * FROM patients WHERE provider_id = ?) when table exists
-$patients = [];
-
-$totalPatients = count($patients);
 ?>
 <!DOCTYPE html>
 <html lang="en">

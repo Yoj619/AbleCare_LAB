@@ -31,6 +31,8 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (params: LoginRequest) => Promise<LoginOutcome>;
   logout: () => Promise<void>;
+  /** Hydrates the user into context from an already-stored token (e.g. after registration). */
+  restoreUser: (user: AuthUser) => Promise<void>;
   /** Current foreground location permission status. */
   locationPermission: LocationPermission;
   /** Silently request foreground location permission (called once after login). */
@@ -105,6 +107,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLocationPermission(toPermission(status));
   }, []);
 
+  const restoreUser = useCallback(async (authUser: AuthUser): Promise<void> => {
+    setUser(authUser);
+    await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(authUser));
+  }, []);
+
   const login = useCallback(async (params: LoginRequest): Promise<LoginOutcome> => {
     const result = await loginRequest(params);
     if (!result.ok) {
@@ -129,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
     login,
     logout,
+    restoreUser,
     locationPermission,
     requestLocationPermission,
     recheckLocationPermission,

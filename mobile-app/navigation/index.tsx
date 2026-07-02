@@ -54,6 +54,7 @@ import PatientInformationScreen from '../screens/patient/PatientInformationScree
 import RecommendedClinicsScreen from '../screens/clinics/RecommendedClinicsScreen';
 import ClinicDetailScreen from '../screens/clinics/ClinicDetailScreen';
 import ClinicRecommendationResultScreen from '../screens/clinics/ClinicRecommendationResultScreen';
+import ConsultationStatusScreen from '../screens/clinics/ConsultationStatusScreen';
 
 // Therapy
 import TherapyScheduleScreen from '../screens/therapy/TherapyScheduleScreen';
@@ -159,6 +160,7 @@ export default function RootNavigator() {
       <Stack.Screen name="RecommendedClinics" component={RecommendedClinicsScreen} />
       <Stack.Screen name="ClinicDetail" component={ClinicDetailScreen} />
       <Stack.Screen name="ClinicRecommendationResult" component={ClinicRecommendationResultScreen} />
+      <Stack.Screen name="ConsultationStatus" component={ConsultationStatusScreen} />
       {/* Therapy */}
       <Stack.Screen name="TherapySchedule" component={TherapyScheduleScreen} />
       <Stack.Screen name="AddTherapySession" component={AddTherapySessionScreen} />

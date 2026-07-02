@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Radius, Spacing, Typography } from '../constants/theme';
+import { useAuth } from '../context/AuthContext';
 
 const DRAWER_WIDTH = Dimensions.get('window').width * 0.78;
 
@@ -20,8 +21,6 @@ interface DrawerItem {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   key: string;
-  active?: boolean;
-  highlight?: boolean;
 }
 
 const MENU_ITEMS: DrawerItem[] = [
@@ -30,7 +29,7 @@ const MENU_ITEMS: DrawerItem[] = [
   { label: 'Health Records', icon: 'clipboard-outline', key: 'HealthRecords' },
   { label: 'AI Guidance', icon: 'sparkles-outline', key: 'AIHelp' },
   { label: 'Therapy Schedule', icon: 'calendar-outline', key: 'TherapySchedule' },
-  { label: 'Messages', icon: 'chatbubble-outline', key: 'Messages', highlight: true },
+  { label: 'Messages', icon: 'chatbubble-outline', key: 'Messages' },
   { label: 'Clinic Recommendation', icon: 'medkit-outline', key: 'RecommendedClinics' },
   { label: 'Emergency Alert', icon: 'warning-outline', key: 'EmergencyAlert' },
 ];
@@ -45,6 +44,12 @@ interface DrawerMenuProps {
 
 export default function DrawerMenu({ visible, activeKey, onClose, onNavigate, onLogout }: DrawerMenuProps) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+
+  const fullName = user ? `${user.firstName} ${user.lastName}`.trim() : 'Caregiver';
+  const initials = user
+    ? `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase()
+    : '?';
   const [modalVisible, setModalVisible] = useState(visible);
   const drawerOpacity = useRef(new Animated.Value(0)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -76,10 +81,10 @@ export default function DrawerMenu({ visible, activeKey, onClose, onNavigate, on
             style={[styles.drawerHeader, { paddingTop: insets.top + Spacing.md }]}
           >
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>MS</Text>
+              <Text style={styles.avatarText}>{initials}</Text>
             </View>
             <View style={styles.userInfo}>
-              <Text style={styles.userName}>Maria Santos</Text>
+              <Text style={styles.userName}>{fullName}</Text>
               <Text style={styles.userRole}>Caregiver</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
@@ -101,10 +106,10 @@ export default function DrawerMenu({ visible, activeKey, onClose, onNavigate, on
                   <Ionicons
                     name={item.icon}
                     size={18}
-                    color={item.highlight ? Colors.primary : Colors.textSecondary}
+                    color={isActive ? Colors.primary : Colors.textSecondary}
                     style={styles.menuIcon}
                   />
-                  <Text style={[styles.menuLabel, isActive && styles.menuLabelActive, item.highlight && styles.menuHighlight]}>
+                  <Text style={[styles.menuLabel, isActive && styles.menuLabelActive]}>
                     {item.label}
                   </Text>
                   <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
@@ -170,7 +175,6 @@ const styles = StyleSheet.create({
   menuIcon: { width: 24 },
   menuLabel: { flex: 1, fontSize: Typography.size.md, color: Colors.textPrimary, fontWeight: Typography.weight.medium },
   menuLabelActive: { color: Colors.primary, fontWeight: Typography.weight.semiBold },
-  menuHighlight: { color: Colors.primary },
   logoutRow: {
     flexDirection: 'row',
     alignItems: 'center',

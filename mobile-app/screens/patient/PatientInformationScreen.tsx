@@ -8,7 +8,7 @@ import {
   StyleSheet,
   StatusBar,
   Modal,
-  FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +17,8 @@ import type { RootStackParamList } from '../../navigation/types';
 import Logo from '../../components/Logo';
 import AppButton from '../../components/AppButton';
 import { Colors, Spacing, Typography, Radius, Shadows } from '../../constants/theme';
+import { createPatient } from '../../services/patients';
+import type { DisabilityCategory, PatientGender } from '../../services/patients';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PatientInformation'>;
 
@@ -25,9 +27,10 @@ const GENDER_OPTIONS = ['Male', 'Female', 'Other'];
 const BLOOD_OPTIONS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 // ─── Medical conditions list ──────────────────────────────────────────────────
-const CONDITIONS: { section: string; items: string[] }[] = [
+const CONDITIONS: { section: string; category: DisabilityCategory; items: string[] }[] = [
   {
     section: 'PHYSICAL DISABILITIES',
+    category: 'physical',
     items: [
       'Mobility Impairment',
       'Partial Paralysis',
@@ -46,9 +49,10 @@ const CONDITIONS: { section: string; items: string[] }[] = [
   },
   {
     section: 'NEUROLOGICAL / COGNITIVE',
+    category: 'cognitive',
     items: [
       'Dementia',
-      'Alzheimer\'s Disease',
+      "Alzheimer's Disease",
       'Autism Spectrum Disorder',
       'Down Syndrome',
       'Intellectual Disability',
@@ -58,6 +62,7 @@ const CONDITIONS: { section: string; items: string[] }[] = [
   },
   {
     section: 'SENSORY DISABILITIES',
+    category: 'sensory_visual',
     items: [
       'Visual Impairment / Blindness',
       'Hearing Impairment / Deafness',
@@ -66,6 +71,7 @@ const CONDITIONS: { section: string; items: string[] }[] = [
   },
   {
     section: 'CHRONIC CONDITIONS',
+    category: 'physical',
     items: [
       'Diabetes',
       'Hypertension',
@@ -76,6 +82,15 @@ const CONDITIONS: { section: string; items: string[] }[] = [
     ],
   },
 ];
+
+// Maps each condition string to its disability category
+const CONDITION_CATEGORY: Record<string, DisabilityCategory> = {};
+for (const group of CONDITIONS) {
+  for (const item of group.items) {
+    CONDITION_CATEGORY[item] = group.category;
+  }
+}
+CONDITION_CATEGORY['Hearing Impairment / Deafness'] = 'sensory_hearing';
 
 // ─── Simple Select component ──────────────────────────────────────────────────
 function SimpleSelect({
@@ -196,6 +211,8 @@ export default function PatientInformationScreen({ navigation }: Props) {
   const [gender, setGender] = useState('');
   const [bloodType, setBloodType] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   function toggleCondition(item: string) {
     setSelected(prev => {
@@ -205,10 +222,59 @@ export default function PatientInformationScreen({ navigation }: Props) {
     });
   }
 
-  function handleContinue() {
-    navigation.navigate('ClinicRecommendationResult', {
-      conditions: Array.from(selected),
+  async function handleContinue() {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("Please enter the patient's full name.");
+      return;
+    }
+    if (selected.size === 0) {
+      setError('Please select at least one medical condition or disability.');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+
+    const nameParts = trimmedName.split(/\s+/);
+    const firstName = nameParts[0] ?? '';
+    const lastName  = nameParts.slice(1).join(' ') || '.';
+
+    const ageNum = parseInt(age, 10);
+    const dateOfBirth = !isNaN(ageNum) && ageNum > 0
+      ? `${new Date().getFullYear() - ageNum}-01-01`
+      : undefined;
+
+    const genderMap: Record<string, PatientGender> = {
+      Male: 'male', Female: 'female', Other: 'other',
+    };
+    const patientGender = genderMap[gender];
+
+    const conditions = Array.from(selected);
+
+    // Pick category by priority: cognitive > sensory_hearing > sensory_visual > physical
+    const categoryPriority: DisabilityCategory[] = ['cognitive', 'sensory_hearing', 'sensory_visual', 'physical'];
+    const presentCategories = new Set(conditions.map(c => CONDITION_CATEGORY[c]).filter((c): c is DisabilityCategory => c !== undefined));
+    const disabilityCategory = categoryPriority.find(cat => presentCategories.has(cat));
+
+    const result = await createPatient({
+      firstName,
+      lastName,
+      dateOfBirth,
+      gender: patientGender,
+      disabilityCategory,
+      specificCondition: conditions.join(', '),
+      medicalHistory: bloodType ? `Blood type: ${bloodType}` : undefined,
     });
+
+    setLoading(false);
+
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    navigation.navigate('ClinicRecommendationResult', { conditions });
   }
 
   return (
@@ -229,6 +295,13 @@ export default function PatientInformationScreen({ navigation }: Props) {
         {/* Heading */}
         <Text style={styles.title}>Patient Information</Text>
         <Text style={styles.subtitle}>Register your patient (PWD or Elderly)</Text>
+
+        {error !== '' && (
+          <View style={styles.errorBox}>
+            <Ionicons name="alert-circle-outline" size={16} color={Colors.danger} />
+            <Text style={styles.errorTxt}>{error}</Text>
+          </View>
+        )}
 
         {/* Form card */}
         <View style={styles.formCard}>
@@ -309,11 +382,18 @@ export default function PatientInformationScreen({ navigation }: Props) {
         </View>
 
         {/* Continue button */}
-        <AppButton
-          label="Continue to Clinic Recommendation"
-          onPress={handleContinue}
-          style={styles.continueBtn}
-        />
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.loadingTxt}>Saving patient information…</Text>
+          </View>
+        ) : (
+          <AppButton
+            label="Continue to Clinic Recommendation"
+            onPress={() => void handleContinue()}
+            style={styles.continueBtn}
+          />
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -338,6 +418,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: Spacing.lg,
   },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    backgroundColor: Colors.dangerLight,
+    borderRadius: Radius.md,
+    padding: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  errorTxt: { flex: 1, fontSize: Typography.size.sm, color: Colors.danger },
   formCard: {
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
@@ -356,9 +446,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.inputBg,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: 13,
+    borderRadius: Radius.md,
     fontSize: Typography.size.md,
     color: Colors.textPrimary,
   },
@@ -406,5 +496,7 @@ const styles = StyleSheet.create({
   checkboxActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   checkLabel: { flex: 1, fontSize: Typography.size.sm, color: Colors.textPrimary },
   checkLabelActive: { color: Colors.primary, fontWeight: Typography.weight.medium },
+  loadingWrap: { alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md },
+  loadingTxt: { fontSize: Typography.size.sm, color: Colors.textSecondary },
   continueBtn: {},
 });

@@ -12,7 +12,14 @@ export type RootStackParamList = {
   Landing: undefined;
   Login: undefined;
   Register: undefined;
-  RegisterConsent: undefined;
+  RegisterConsent: {
+    fullName: string;
+    email: string;
+    phone: string;
+    password: string;
+    address: string;
+    barangay: string;
+  };
   ForgotPassword: undefined;
   // Main tabs
   Main: NavigatorScreenParams<MainTabParamList>;
@@ -46,6 +53,12 @@ export type RootStackParamList = {
   RecommendedClinics: undefined;
   ClinicDetail: { clinicId: string; clinicName: string };
   ClinicRecommendationResult: { conditions: string[] };
+  ConsultationStatus: {
+    providerId: number;
+    providerName: string;
+    clinicName: string | null;
+    patientId?: number;
+  };
   // Therapy
   TherapySchedule: undefined;
   AddTherapySession: undefined;

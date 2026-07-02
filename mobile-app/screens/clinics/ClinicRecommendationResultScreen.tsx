@@ -11,6 +11,7 @@ import Logo from '../../components/Logo';
 import AppButton from '../../components/AppButton';
 import { useActivePatient } from '../../hooks/useActivePatient';
 import { getRecommendations, type ClinicRecommendation } from '../../services/clinics';
+import { createConsultation } from '../../services/consultations';
 import { Colors, Spacing, Typography, Radius, Shadows } from '../../constants/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ClinicRecommendationResult'>;
@@ -26,6 +27,33 @@ export default function ClinicRecommendationResultScreen({ navigation, route }: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+
+  // Request state: which provider is currently being submitted, and which are done
+  const [requesting, setRequesting] = useState<number | null>(null);
+  const [requested, setRequested] = useState<Record<number, boolean>>({});
+  const [requestError, setRequestError] = useState<string | null>(null);
+
+  async function handleRequest(clinic: ClinicRecommendation) {
+    if (!patient) return;
+    setRequesting(clinic.providerId);
+    setRequestError(null);
+
+    const result = await createConsultation(clinic.providerId, patient.id);
+    setRequesting(null);
+
+    if (!result.ok) {
+      setRequestError(result.error);
+      return;
+    }
+
+    setRequested(prev => ({ ...prev, [clinic.providerId]: true }));
+    navigation.navigate('ConsultationStatus', {
+      providerId:   clinic.providerId,
+      providerName: clinic.providerName,
+      clinicName:   clinic.clinicName,
+      patientId:    patient.id,
+    });
+  }
 
   useEffect(() => {
     if (!patient) { setLoading(false); return; }
@@ -207,18 +235,33 @@ export default function ClinicRecommendationResultScreen({ navigation, route }: 
                     <Text style={styles.matchNote}>Best match for your patient's condition</Text>
                   </View>
                 )}
+
+                {/* Request Consultation button */}
+                <View style={styles.requestRow}>
+                  <AppButton
+                    label={
+                      requesting === clinic.providerId
+                        ? 'Sending request…'
+                        : requested[clinic.providerId]
+                        ? 'Request Sent ✓'
+                        : 'Request Consultation'
+                    }
+                    onPress={() => void handleRequest(clinic)}
+                    disabled={requesting !== null || !!requested[clinic.providerId]}
+                    style={styles.requestBtn}
+                  />
+                </View>
               </View>
             );
           })
         )}
 
-        {/* Confirm button */}
-        {!loading && !error && (
-          <AppButton
-            label="Confirm"
-            onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Main' }] })}
-            style={styles.confirmBtn}
-          />
+        {/* Per-request error banner */}
+        {requestError != null && (
+          <View style={styles.requestErrorBox}>
+            <Ionicons name="alert-circle-outline" size={16} color={Colors.danger} />
+            <Text style={styles.requestErrorTxt}>{requestError}</Text>
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -368,5 +411,17 @@ const styles = StyleSheet.create({
   },
   matchNote: { flex: 1, fontSize: Typography.size.xs, color: Colors.primary, fontWeight: Typography.weight.medium },
 
-  confirmBtn: { marginTop: Spacing.sm },
+  requestRow: { marginTop: Spacing.md },
+  requestBtn: { },
+
+  requestErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    backgroundColor: '#FEE2E2',
+    borderRadius: Radius.md,
+    padding: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  requestErrorTxt: { flex: 1, fontSize: Typography.size.sm, color: Colors.danger },
 });

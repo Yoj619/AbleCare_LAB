@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,8 @@ import type { RootStackParamList } from '../../navigation/types';
 import AppButton from '../../components/AppButton';
 import Card from '../../components/Card';
 import { Colors, Spacing, Typography, Radius } from '../../constants/theme';
+import { registerCaregiver } from '../../services/auth';
+import { useAuth } from '../../context/AuthContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RegisterConsent'>;
 
@@ -31,9 +34,40 @@ The system collects and stores user information only for system functionality an
 
 Any misuse of data or breach of this agreement may result in account restriction or removal.`;
 
-export default function RegisterConsentScreen({ navigation }: Props) {
+export default function RegisterConsentScreen({ navigation, route }: Props) {
+  const { fullName, email, phone, address, barangay, password } = route.params;
+  const { restoreUser } = useAuth();
+
   const [consentChecked, setConsentChecked] = useState(false);
   const [ndaChecked, setNdaChecked] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleCreateAccount() {
+    setError('');
+    setLoading(true);
+
+    const result = await registerCaregiver({
+      name: fullName,
+      email,
+      phone,
+      address,
+      barangay,
+      password,
+    });
+
+    setLoading(false);
+
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    // Token is stored by registerCaregiver(); also hydrate the auth context so
+    // the drawer shows the correct user name from the first screen after registration.
+    await restoreUser(result.data.user);
+    navigation.navigate('PatientInformation');
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -46,6 +80,13 @@ export default function RegisterConsentScreen({ navigation }: Props) {
 
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>Join AbleCare as a Caregiver</Text>
+
+        {error !== '' && (
+          <View style={styles.errorBox}>
+            <Ionicons name="alert-circle-outline" size={16} color={Colors.danger} />
+            <Text style={styles.errorTxt}>{error}</Text>
+          </View>
+        )}
 
         <Card style={styles.card}>
           <Text style={styles.sectionTitle}>CONSENT FORM</Text>
@@ -77,12 +118,19 @@ export default function RegisterConsentScreen({ navigation }: Props) {
           </TouchableOpacity>
         </Card>
 
-        <AppButton
-          label="Create Account"
-          onPress={() => navigation.navigate('PatientInformation')}
-          disabled={!consentChecked || !ndaChecked}
-          style={styles.createBtn}
-        />
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.loadingTxt}>Creating your account…</Text>
+          </View>
+        ) : (
+          <AppButton
+            label="Create Account"
+            onPress={() => void handleCreateAccount()}
+            disabled={!consentChecked || !ndaChecked}
+            style={styles.createBtn}
+          />
+        )}
 
         <View style={styles.loginRow}>
           <Text style={styles.loginTxt}>Already have an account? </Text>
@@ -113,6 +161,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: Spacing.lg,
   },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 8,
+    padding: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  errorTxt: { flex: 1, fontSize: Typography.size.sm, color: Colors.danger },
   card: { marginBottom: Spacing.lg },
   sectionTitle: {
     fontSize: Typography.size.sm,
@@ -142,8 +200,11 @@ const styles = StyleSheet.create({
   },
   checkboxActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   checkLabel: { flex: 1, fontSize: Typography.size.xs, color: Colors.textSecondary, lineHeight: 18 },
+  loadingWrap: { alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md },
+  loadingTxt: { fontSize: Typography.size.sm, color: Colors.textSecondary },
   createBtn: { marginBottom: Spacing.md },
   loginRow: { flexDirection: 'row', justifyContent: 'center' },
   loginTxt: { fontSize: Typography.size.sm, color: Colors.textSecondary },
   loginLink: { fontSize: Typography.size.sm, color: Colors.primary, fontWeight: Typography.weight.bold },
+
 });

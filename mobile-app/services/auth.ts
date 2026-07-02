@@ -29,12 +29,13 @@ export interface RegisterCaregiverRequest {
   email: string;
   password: string;
   phone: string;
-  address: string;
-  barangay: string;
+  address?: string;
+  barangay?: string;
 }
 
 export interface RegisterCaregiverResponse {
-  message: string;
+  token: string;
+  user: AuthUser;
 }
 
 export interface LogoutResponse {
@@ -69,20 +70,26 @@ export async function login(params: LoginRequest): Promise<LoginResult> {
 }
 
 export async function registerCaregiver(params: RegisterCaregiverRequest): Promise<RegisterCaregiverResult> {
-  const { name, email, password, phone, address, barangay } = params;
+  const { name, email, password, phone, address = '', barangay = '' } = params;
 
-  if (!name.trim() || !email.trim() || !phone.trim() || !address.trim() || !barangay.trim()) {
+  if (!name.trim() || !email.trim() || !phone.trim()) {
     return { ok: false, error: 'Please fill in all required fields.' };
   }
   if (password.length < 8) {
     return { ok: false, error: 'Password must be at least 8 characters.' };
   }
 
-  return apiRequest<RegisterCaregiverResponse>(ENDPOINTS.registerCaregiver, {
+  const result = await apiRequest<RegisterCaregiverResponse>(ENDPOINTS.registerCaregiver, {
     method: 'POST',
     body: { name, email, password, phone, address, barangay },
     auth: false,
   });
+
+  if (result.ok) {
+    await setToken(result.data.token);
+  }
+
+  return result;
 }
 
 export async function logout(): Promise<LogoutResult> {
